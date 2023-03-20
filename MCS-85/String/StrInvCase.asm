@@ -1,0 +1,69 @@
+;* Yggdrasil (TM) Core Operating System (MCS-80/85): String Library
+;* Copyright (C) DeRemee Systems, IXE Electronics LLC
+;* Portions copyright IXE Electronics LLC, Republic Robotics,
+;* FemtoLaunch, FemtoSat, FemtoTrack, Weland
+;* This work is made available under the Creative Commons
+;* Attribution-NonCommercial-ShareAlike 4.0 International License.
+;* To view a copy of this license, visit
+;* http://creativecommons.org/licenses/by-nc-sa/4.0/.
+
+;INVERTS THE CASE OF LETTERS WITHIN A STRING
+;ON ENTRY:
+;	B		= TERMINATOR
+;	DE		= DESTINATION STRING ADDRESS
+;	HL		= SOURCE STRING ADDRESS
+;	[HL]	= SOURCE STRING
+;ON RETURN:
+;	A		= 0x00
+;	B		= VALUE ON ENTRY
+;	DE		= VALUE ON ENTRY
+;	HL		= VALUE ON ENTRY
+;	[DE]	= NEW STRING
+;	[HL]	= VALUE ON ENTRY
+;	CF		= 0
+STRINVCASE:
+	;SAVE REGISTERS
+	PUSH	PSW
+	PUSH	D
+	PUSH	H
+STRINVCASEA:
+	;LOAD CHARACTER FROM SOURCE STRING
+	MOV		A, M
+	;CHARACTER == TERMINATOR?
+	CMP		B
+	JZ		STRINVCASED
+	;CHARACTER < "A"?
+	CPI		0x41
+	JC		STRINVCASEC
+	;CHARACTER > "z"?
+	CPI		0x7B
+	JNC		STRINVCASEC
+	;CHARACTER > "Z"?
+	CPI		0x5B
+	JNC		STRINVCASEB
+	;CONVERT TO LOWERCASE
+	ADI		0x20
+	JMP		STRINVCASEC
+STRINVCASEB:
+	;CHARACTER < "a"?
+	CPI		0x61
+	JC		STRINVCASEC
+	;CONVERT TO UPPERCASE
+	SUI		0x20
+STRINVCASEC:
+	;STORE CHARACTER
+	STAX	D
+	;POINT TO NEXT SOURCE CHARACTER
+	INX		H
+	;POINT TO NEXT DESTINATION CHARACTER
+	INX		D
+	JMP		STRINVCASEA
+STRINVCASED:
+	;STORE TERMINATOR CHARACTER
+	STAX	D
+	;RESTORE REGISTERS & RETURN
+	POP		H
+	POP		D
+	POP		PSW
+	ORA		A
+	RET
