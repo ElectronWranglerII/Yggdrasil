@@ -1,0 +1,68 @@
+;* Yggdrasil (TM) Core Operating System (MCS-80/85): String Library
+;* Copyright (C) DeRemee Systems, IXE Electronics LLC
+;* Portions copyright IXE Electronics LLC, Republic Robotics,
+;* FemtoLaunch, FemtoSat, FemtoTrack, Weland
+;* This work is made available under the Creative Commons
+;* Attribution-NonCommercial-ShareAlike 4.0 International License.
+;* To view a copy of this license, visit
+;* http://creativecommons.org/licenses/by-nc-sa/4.0/.
+
+;COUNTS THE NUMBER OF TIMES A CHARACTER OCCURS WITHIN A STRING
+;ON ENTRY:
+;	B		= TERMINATOR
+;	C		= TARGET CHARACTER
+;	HL		= STRING ADDRESS
+;	[HL]	= STRING
+;ON RETURN:
+;	B		= VALUE ON ENTRY
+;	C		= VALUE ON ENTRY
+;	DE		= CHARACTER COUNT
+;	HL		= VALUE ON ENTRY
+;	[HL]	= VALUE ON ENTRY
+;	CF		= 0 IF CHARACTER NOT FOUND
+;		A	= 0x00 IF NO ERROR
+;		A	= STR_OVERFLOW IF COUNT OVERFLOWED
+;	CF		= 1 IF CHARACTER FOUND
+;		A	= 0x00
+STRCOUNTCHR:
+	;SAVE REGISTERS
+	PUSH	H
+	;ZEROIZE CHARACTER COUNT
+	LXI		D, 0x0000
+STRCOUNTCHRA:
+	;LOAD CHARACTER FROM STRING
+	MOV		A, M
+	;CHARACTER == TERMINATOR?
+	CMP		B
+	JZ		STRCOUNTCHRC
+	;CHARACTER == TARGET CHARACTER?
+	CMP		C
+	JNZ		STRCOUNTCHRB
+	;INCREMENT CHARACTER COUNT
+	INX		D
+	;CHARACTER COUNT OVERFLOW?
+	MOV		A, D
+	ORA		E
+	JZ		STRCOUNTCHRE
+STRCOUNTCHRB:
+	;POINT TO NEXT CHARACTER IN STRING
+	INX		H
+	JMP		STRCOUNTCHRA
+STRCOUNTCHRC:
+	;CHARACTER FOUND?
+	MOV		A, D
+	ORA		E
+	JZ		STRCOUNTCHRD
+	;
+	STC
+STRCOUNTCHRD:
+	MVI		A, 0x00
+	;RESTORE REGISTERS & RETURN
+	POP		H
+	RET
+STRCOUNTCHRE:
+	;RESTORE REGISTERS & RETURN
+	POP		H
+	MVI		A, STR_OVERFLOW
+	ORA		A
+	RET
