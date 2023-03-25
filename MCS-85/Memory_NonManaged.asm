@@ -9,7 +9,7 @@
 
 
 ;+-----------------------------------+
-;| MEMORY CONTROL ENTRY (MCB) FORMAT |
+;| MEMORY CONTROL BLOCK (MCB) FORMAT |
 ;+-----------------------------------+
 ;|           ENTRY 0 FLAGS           |
 ;+-----------------------------------+
