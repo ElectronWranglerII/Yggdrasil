@@ -17,9 +17,12 @@
 	</head> 
 	<body> 
 		<script>
-			var RAMSize = 65536;
+			var RAMSize = 1048576;
 			var RAM = Array(RAMSize).fill(0);
+			var FlashSize = 1048576;
+			var FLASH = Array(FlashSize).fill(255);
 			var PORT = Array(256).fill(0);
+			var BAR = Array(8).fill(0);
 			var Halted = false;
 			var RefreshTask;
 			var Breakpoint = [];
@@ -33,7 +36,7 @@
 				if (!file) return;
 				var reader = new FileReader();
 				reader.onload = function(e){
-					document.getElementById('contents').innerHTML = e.target.result;
+					document.getElementById('hexfile').innerHTML = e.target.result;
 					Decode();
 					Reset();
 				}
@@ -43,8 +46,8 @@
 			function Decode(){
 				var Buffer = "";
 				var Line = [];
-				var FileData = document.getElementById('contents').innerHTML;
-				document.getElementById('contents').innerHTML = "";
+				var FileData = document.getElementById('hexfile').innerHTML;
+				document.getElementById('hexfile').innerHTML = "";
 				for(let i = 0; i < FileData.length; i++){
 					if(FileData[i] == '\n'){
 						Line.push(Buffer);
@@ -55,20 +58,39 @@
 				}
 				for(let i = 0; i < Line.length; i++){
 					var ByteCount;
-					var Address;
+					let Address;
+					let Offset = parseInt(document.getElementById("LoadOffset").value, 16);
 					Buffer = Line[i];
-					if(Buffer.substring(0, 1) == ":"){
-						ByteCount = parseInt(Buffer.substring(1, 3), 16);
-						Address = parseInt(Buffer.substring(3, 7), 16);
-						Type = parseInt(Buffer.substring(7, 9), 16);
-						if(Type == 0){
-							for(let j = 0; j < ByteCount * 2; j = j + 2){
-								RAM[Address] = parseInt(Buffer.substring(9 + j, 9 + j + 2), 16);
-								Address = Address + 1;
+					if(document.getElementById("LoadToggle").checked == true){
+						if(Buffer.substring(0, 1) == ":"){
+							ByteCount = parseInt(Buffer.substring(1, 3), 16);
+							Address = parseInt(Buffer.substring(3, 7), 16);
+							Type = parseInt(Buffer.substring(7, 9), 16);
+							if(Type == 0){
+								for(let j = 0; j < ByteCount * 2; j = j + 2){
+									RAM[Address + Offset] = parseInt(Buffer.substring(9 + j, 9 + j + 2), 16);
+									Address = Address + 1;
+								}
+							}else{
+								if(parseInt(Buffer.substring(9, 11), 16) != 255){
+									alert("Error: Incorrect end of file");
+								}
 							}
-						}else{
-							if(parseInt(Buffer.substring(9, 11), 16) != 255){
-								alert("Error: Incorrect end of file");
+						}
+					}else{
+						if(Buffer.substring(0, 1) == ":"){
+							ByteCount = parseInt(Buffer.substring(1, 3), 16);
+							Address = parseInt(Buffer.substring(3, 7), 16);
+							Type = parseInt(Buffer.substring(7, 9), 16);
+							if(Type == 0){
+								for(let j = 0; j < ByteCount * 2; j = j + 2){
+									FLASH[Address + Offset] = parseInt(Buffer.substring(9 + j, 9 + j + 2), 16);
+									Address = Address + 1;
+								}
+							}else{
+								if(parseInt(Buffer.substring(9, 11), 16) != 255){
+									alert("Error: Incorrect end of file");
+								}
 							}
 						}
 					}
@@ -92,6 +114,10 @@
 			var PF = 0;
 			var AF = 0;
 			var CF = 0;
+			
+			var RAMASpace = 1;
+			var RAMBSpace = 0;
+			var Page = 0;
 		
 			var ClockSpeed = 10000000;
 			var Delta = 1 / ClockSpeed;
@@ -314,11 +340,11 @@
 				"CMP M",
 				"CMP A",
 				"RNZ",
-				"POPb",
+				"POP B",
 				"JNZw",
 				"JMPw",
 				"CNZw",
-				"PUSHb",
+				"PUSH B",
 				"ADIb",
 				"RST 0",
 				"RZ",
@@ -388,14 +414,14 @@
 				//LXI B, nnnn
 				function Inst01(){
 					PC++;
-					C = RAMRead(PC);
+					C = MemoryRead(PC);
 					PC++;
-					B = RAMRead(PC);
+					B = MemoryRead(PC);
 					PC++;
 				},
 				//STAX B
 				function Inst02(){
-					RAMWrite(B * 256 + C, A);
+					MemoryWrite(B * 256 + C, A);
 					PC++;
 				},
 				//INX B
@@ -431,7 +457,7 @@
 				//MVI B, nn
 				function Inst06(){
 					PC++;
-					B = RAMRead(PC);
+					B = MemoryRead(PC);
 					PC++;
 				},
 				//RLC
@@ -459,7 +485,7 @@
 				},
 				//LDAX B
 				function Inst0A(){
-					A = RAMRead(B * 256 + C);
+					A = MemoryRead(B * 256 + C);
 					PC++;
 				},
 				//DCX B
@@ -495,7 +521,7 @@
 				//MVI C, nn
 				function Inst0E(){
 					PC++;
-					C = RAMRead(PC);
+					C = MemoryRead(PC);
 					PC++;
 				},
 				//RRC
@@ -512,14 +538,14 @@
 				//LXI D, nnnn
 				function Inst11(){
 					PC++;
-					E = RAMRead(PC);
+					E = MemoryRead(PC);
 					PC++;
-					D = RAMRead(PC);
+					D = MemoryRead(PC);
 					PC++;
 				},
 				//STAX D
 				function Inst12(){
-					RAMWrite(D * 256 + E, A);
+					MemoryWrite(D * 256 + E, A);
 					PC++;
 				},
 				//INX D
@@ -555,7 +581,7 @@
 				//MVI D, nn
 				function Inst16(){
 					PC++;
-					D = RAMRead(PC);
+					D = MemoryRead(PC);
 					PC++;
 				},
 				//RAL
@@ -583,7 +609,7 @@
 				},
 				//LDAX D
 				function Inst1A(){
-					A = RAMRead(D * 256 + E);
+					A = MemoryRead(D * 256 + E);
 					PC++;
 				},
 				//DCX D
@@ -619,7 +645,7 @@
 				//MVI E, nn
 				function Inst1E(){
 					PC++;
-					E = RAMRead(PC);
+					E = MemoryRead(PC);
 					PC++;
 				},
 				//RAR
@@ -636,15 +662,15 @@
 				//LXI H, nnnn
 				function Inst21(){
 					PC++;
-					L = RAMRead(PC);
+					L = MemoryRead(PC);
 					PC++;
-					H = RAMRead(PC);
+					H = MemoryRead(PC);
 					PC++;
 				},
 				//SHLD
 				function Inst22(){
-					RAMWrite(RAMRead(PC + 2) * 256 + RAMRead(PC + 1), L);
-					RAMWrite(RAMRead(PC + 2) * 256 + RAMRead(PC + 1) + 1, H);
+					MemoryWrite(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1), L);
+					MemoryWrite(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1) + 1, H);
 					PC = PC + 3;
 				},
 				//INX H
@@ -680,7 +706,7 @@
 				//MVI H, nn
 				function Inst26(){
 					PC++;
-					H = RAMRead(PC);
+					H = MemoryRead(PC);
 					PC++;
 				},
 				//DAA
@@ -705,8 +731,8 @@
 				},
 				//LHLD
 				function Inst2A(){
-					L = RAMRead(RAMRead(PC + 2) * 256 + RAMRead(PC + 1));
-					H = RAMRead(RAMRead(PC + 2) * 256 + RAMRead(PC + 1) + 1);
+					L = MemoryRead(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1));
+					H = MemoryRead(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1) + 1);
 					PC = PC + 3;
 				},
 				//DCX H
@@ -742,7 +768,7 @@
 				//MVI L, nn
 				function Inst2E(){
 					PC++;
-					L = RAMRead(PC);
+					L = MemoryRead(PC);
 					PC++;
 				},
 				//CMA
@@ -756,12 +782,12 @@
 				},
 				//LXI SP, nnnn
 				function Inst31(){
-					SP = RAMRead(PC + 2) * 256 + RAMRead(PC + 1);
+					SP = MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1);
 					PC = PC + 3;
 				},
 				//STA nnnn
 				function Inst32(){
-					RAMWrite(RAMRead(PC + 2) * 256 + RAMRead(PC + 1), A);
+					MemoryWrite(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1), A);
 					PC = PC + 3;
 				},
 				//INX SP
@@ -774,20 +800,20 @@
 				},
 				//INR M
 				function Inst34(){
-					RAMWrite(RAMRead(H * 256 + L) + 1);
-					UpdateFlagsID(RAMRead(H * 256 + L));
+					MemoryWrite(MemoryRead(H * 256 + L) + 1);
+					UpdateFlagsID(MemoryRead(H * 256 + L));
 					PC++;
 				},
 				//DCR M
 				function Inst35(){
-					RAMWrite(RAMRead(H * 256 + L) - 1);
-					UpdateFlagsID(RAMRead(H * 256 + L));
+					MemoryWrite(MemoryRead(H * 256 + L) - 1);
+					UpdateFlagsID(MemoryRead(H * 256 + L));
 					PC++;
 				},
 				//MVI M, nn
 				function Inst36(){
 					PC++;
-					RAMWrite(H * 256 + L, RAMRead(PC));
+					MemoryWrite(H * 256 + L, MemoryRead(PC));
 					PC++;
 				},
 				//STC
@@ -808,7 +834,7 @@
 				},
 				//LDA nnnn
 				function Inst3A(){
-					A = RAMRead(RAMRead(PC + 2) * 256 + RAMRead(PC + 1), A);
+					A = MemoryRead(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1), A);
 					PC = PC + 3;
 				},
 				//DCX SP
@@ -840,7 +866,7 @@
 				//MVI A, nn
 				function Inst3E(){
 					PC++;
-					A = RAMRead(PC);
+					A = MemoryRead(PC);
 					PC++;
 				},
 				//CMC
@@ -880,7 +906,7 @@
 				},
 				//MOV B, M
 				function Inst46(){
-					B = RAMRead(H * 256 + L);
+					B = MemoryRead(H * 256 + L);
 					PC++;
 				},
 				//MOV B, A
@@ -920,7 +946,7 @@
 				},
 				//MOV C, M
 				function Inst46(){
-					C = RAMRead(H * 256 + L);
+					C = MemoryRead(H * 256 + L);
 					PC++;
 				},
 				//MOV C, A
@@ -960,7 +986,7 @@
 				},
 				//MOV D, M
 				function Inst56(){
-					D = RAMRead(H * 256 + L);
+					D = MemoryRead(H * 256 + L);
 					PC++;
 				},
 				//MOV D, A
@@ -1000,7 +1026,7 @@
 				},
 				//MOV E, M
 				function Inst5E(){
-					E = RAMRead(H * 256 + L);
+					E = MemoryRead(H * 256 + L);
 					PC++;
 				},
 				//MOV E, A
@@ -1040,7 +1066,7 @@
 				},
 				//MOV H, M
 				function Inst66(){
-					H = RAMRead(H * 256 + L);
+					H = MemoryRead(H * 256 + L);
 					PC++;
 				},
 				//MOV H, A
@@ -1080,7 +1106,7 @@
 				},
 				//MOV L, M
 				function Inst6E(){
-					L = RAMRead(H * 256 + L);
+					L = MemoryRead(H * 256 + L);
 					PC++;
 				},
 				//MOV L, A
@@ -1094,37 +1120,36 @@
 				},
 				//MOV M, C
 				function Inst71(){
-					RAMWrite(H * 256 + L, C);
+					MemoryWrite(H * 256 + L, C);
 					PC++;
 				},
 				//MOV M, D
 				function Inst72(){
-					RAMWrite(H * 256 + L, D);
+					MemoryWrite(H * 256 + L, D);
 					PC++;
 				},
 				//MOV M, E
 				function Inst73(){
-					RAMWrite(H * 256 + L, E);
+					MemoryWrite(H * 256 + L, E);
 					PC++;
 				},
 				//MOV M, H
 				function Inst74(){
-					RAMWrite(H * 256 + L, H);
+					MemoryWrite(H * 256 + L, H);
 					PC++;
 				},
 				//MOV M, L
 				function Inst75(){
-					RAMWrite(H * 256 + L, L);
+					MemoryWrite(H * 256 + L, L);
 					PC++;
 				},
 				//HLT
 				function Inst76(){
-Halted = true;
-console.log("HALT");
+					Halted = true;
 				},
 				//MOV M, A
 				function Inst77(){
-					RAMWrite(H * 256 + L, A);
+					MemoryWrite(H * 256 + L, A);
 					PC++;
 				},
 				//MOV A, B
@@ -1159,7 +1184,7 @@ console.log("HALT");
 				},
 				//MOV A, M
 				function Inst7E(){
-					A = RAMRead(H * 256 + L);
+					A = MemoryRead(H * 256 + L);
 					PC++;
 				},
 				//MOV A, A
@@ -1193,7 +1218,7 @@ console.log("HALT");
 				},
 				//ADD M
 				function Inst86(){
-					ADD(RAMRead(H * 256 + L));
+					ADD(MemoryRead(H * 256 + L));
 				},
 				//ADD A
 				function Inst87(){
@@ -1225,7 +1250,7 @@ console.log("HALT");
 				},
 				//ADC M
 				function Inst8E(){
-					ADC(RAMRead(H * 256 + L));
+					ADC(MemoryRead(H * 256 + L));
 				},
 				//ADC A
 				function Inst8F(){
@@ -1257,7 +1282,7 @@ console.log("HALT");
 				},
 				//SUB M
 				function Inst96(){
-					SUB(RAMRead(H * 256 + L));
+					SUB(MemoryRead(H * 256 + L));
 				},
 				//SUB A
 				function Inst97(){
@@ -1289,7 +1314,7 @@ console.log("HALT");
 				},
 				//SBB M
 				function Inst9E(){
-					SBB(RAMRead(H * 256 + L));
+					SBB(MemoryRead(H * 256 + L));
 				},
 				//SBB A
 				function Inst9F(){
@@ -1321,7 +1346,7 @@ console.log("HALT");
 				},
 				//ANA M
 				function InstA6(){
-					ANA(RAMRead(H * 256 + L));
+					ANA(MemoryRead(H * 256 + L));
 				},
 				//ANA A
 				function InstA7(){
@@ -1353,7 +1378,7 @@ console.log("HALT");
 				},
 				//XRA M
 				function InstAE(){
-					XRA(RAMRead(H * 256 + L));
+					XRA(MemoryRead(H * 256 + L));
 				},
 				//XRA A
 				function InstAF(){
@@ -1385,7 +1410,7 @@ console.log("HALT");
 				},
 				//ORA M
 				function InstB6(){
-					ORA(RAMRead(H * 256 + L));
+					ORA(MemoryRead(H * 256 + L));
 				},
 				//ORA A
 				function InstB7(){
@@ -1417,7 +1442,7 @@ console.log("HALT");
 				},
 				//CMP M
 				function InstBE(){
-					CMP(RAMRead(H * 256 + L));
+					CMP(MemoryRead(H * 256 + L));
 				},
 				//CMP A
 				function InstBF(){
@@ -1447,7 +1472,7 @@ console.log("HALT");
 				},
 				//JMP nnnn
 				function InstC3(){
-					PC = RAMRead(PC + 2) * 256 + RAMRead(PC + 1);
+					PC = MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1);
 				},
 				//CNZ nnnn
 				function InstC4(){
@@ -1466,7 +1491,7 @@ console.log("HALT");
 				//ADI nn
 				function InstC6(){
 					PC++;
-					ADD(RAMRead(PC));
+					ADD(MemoryRead(PC));
 				},
 				//RST 0
 				function InstC7(){
@@ -1506,7 +1531,7 @@ console.log("HALT");
 				},
 				//CALL nnnn
 				function InstCD(){
-					Temp = RAMRead(PC + 2) * 256 + RAMRead(PC + 1);
+					Temp = MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1);
 					PC = PC + 3;
 					Push(PC / 256 >>> 0);
 					Push(PC % 256 >>> 0);
@@ -1515,7 +1540,7 @@ console.log("HALT");
 				//ACI nn
 				function InstCE(){
 					PC++;
-					ADC(RAMRead(PC));
+					ADC(MemoryRead(PC));
 				},
 				//RST 1
 				function InstCF(){
@@ -1546,7 +1571,8 @@ console.log("HALT");
 				//OUT nn
 				function InstD3(){
 					PC++;
-					IOWrite(RAMRead());
+					IOWrite(MemoryRead(PC), A);
+					PC++;
 				},
 				//CNC nnnn
 				function InstD4(){
@@ -1565,7 +1591,7 @@ console.log("HALT");
 				//SUI nn
 				function InstD6(){
 					PC++;
-					SUB(RAMRead(PC));
+					SUB(MemoryRead(PC));
 				},
 				//RST 2
 				function InstD7(){
@@ -1594,7 +1620,7 @@ console.log("HALT");
 				//IN nn
 				function InstDB(){
 					PC++;
-					IORead(RAMRead(PC));
+					IORead(MemoryRead(PC));
 					PC++;
 				},
 				//CC nnnn
@@ -1612,7 +1638,7 @@ console.log("HALT");
 				//SBI nn
 				function InstDE(){
 					PC++;
-					SBB(RAMRead(PC));
+					SBB(MemoryRead(PC));
 				},
 				//RST 3
 				function InstDF(){
@@ -1642,11 +1668,11 @@ console.log("HALT");
 				},
 				//XTHL
 				function InstE3(){
-					Temp = RAMRead(SP);
-					RAMWrite(SP, L);
+					Temp = MemoryRead(SP);
+					MemoryWrite(SP, L);
 					L = Temp;
-					Temp = RAMRead(SP - 1);
-					RAMWrite(SP - 1, H);
+					Temp = MemoryRead(SP - 1);
+					MemoryWrite(SP - 1, H);
 					H = Temp;
 					PC++;
 				},
@@ -1667,7 +1693,7 @@ console.log("HALT");
 				//ANI nn
 				function InstE6(){
 					PC++;
-					ANA(RAMRead(PC));
+					ANA(MemoryRead(PC));
 				},
 				//RST 4
 				function InstE7(){
@@ -1718,7 +1744,7 @@ console.log("HALT");
 				//XRI nn
 				function InstEE(){
 					PC++;
-					XRA(RAMRead(PC));
+					XRA(MemoryRead(PC));
 				},
 				//RST 5
 				function InstEF(){
@@ -1768,7 +1794,7 @@ console.log("HALT");
 				//ORI nn
 				function InstF6(){
 					PC++;
-					ORA(RAMRead(PC));
+					ORA(MemoryRead(PC));
 				},
 				//RST 6
 				function InstF7(){
@@ -1815,7 +1841,7 @@ console.log("HALT");
 				//CPI nn
 				function InstFE(){
 					PC++;
-					CMP(RAMRead(PC));
+					CMP(MemoryRead(PC));
 				},
 				//RST 7
 				function InstFF(){
@@ -1875,9 +1901,18 @@ console.log("HALT");
 			}
 			
 			function Fetch(){
+				let Temp;
 				PC = (PC & 65535) >>> 0;
-				Temp = RAMRead(PC);
+				Temp = MemoryRead(PC);
 				InstructionMatrix[Temp]();
+			}
+			
+			function FlashRead(Address){
+				return FLASH[Address & RAM.length - 1];
+			}
+			
+			function FlashWrite(Address, Value){
+				FLASH[Address & RAM.length - 1] = Value & 255 >>> 0;
 			}
 			
 			function IORead(Address){
@@ -1888,8 +1923,39 @@ console.log("HALT");
 				PORT[Address & 255] = Value & 255;
 			}
 			
+			function MemoryRead(Address){
+				let BReg = (Address & 49152) >>> 14;
+				let Temp = (BAR[BReg] & 64) >>> 6;
+				switch(Temp){
+					case 0:
+						Temp = FLASH[(BAR[BReg] & 63) * 16384 + (Address & 16383)];
+						break;
+					case 1:
+						Temp = RAM[(BAR[BReg] & 63) * 16384 + (Address & 16383)];
+						break;
+					default:
+						break;
+				}
+				return Temp;
+			}
+			
+			function MemoryWrite(Address, Value){
+				let BReg = (Address & 49152) >>> 14;
+				let Temp = (BAR[BReg] & 128) >>> 7;
+				switch(Temp){
+					case 0:
+						RAM[(BAR[BReg] & 63) * 16384 + (Address & 16383)] = Value & 255;
+						break;
+					case 1:
+						FLASH[(BAR[BReg] & 63) * 16384 + (Address & 16383)] = Value & 255;
+						break;
+					default:
+						break;
+				}
+			}
+			
 			function Pop(){
-				Temp = RAMRead(SP);
+				Temp = MemoryRead(SP);
 				SP++;
 				if(SP > 65535){
 					SP = 0;
@@ -1901,7 +1967,7 @@ console.log("HALT");
 				if(SP < 0){
 					SP = 65535;
 				}
-				RAMWrite(SP, Value);
+				MemoryWrite(SP, Value);
 			}
 			
 			function Reset(){
@@ -1960,12 +2026,6 @@ console.log("HALT");
 				PF = PF ^ PF >>> 2;
 				PF = PF ^ PF >>> 1;
 			}
-			function RAMRead(Address){
-				return RAM[Address & RAM.length - 1];
-			}
-			function RAMWrite(Address, Value){
-				RAM[Address & RAM.length - 1] = Value & 255 >>> 0;
-			}
 			
 			function BreakpointToggle(){
 				if(Breakpoint.includes(PC)){
@@ -1976,15 +2036,15 @@ console.log("HALT");
 			}
 			
 			function InstructionString(){
-				var Temp = Mnemonic[RAMRead(PC)];
+				var Temp = Mnemonic[MemoryRead(PC)];
 				switch(Temp.charAt(Temp.length - 1)){
 					case "b":
 						Temp = Temp.slice(0, -1);
-						Temp = Temp + " " + RAMRead(PC + 1).toString(16).toUpperCase().padStart(2, "0");
+						Temp = Temp + " " + MemoryRead(PC + 1).toString(16).toUpperCase().padStart(2, "0");
 						break;
 					case "w":
 						Temp = Temp.slice(0, -1);
-						Temp = Temp + " " + (RAMRead(PC + 2) * 256 + RAMRead(PC + 1)).toString(16).toUpperCase().padStart(4, "0");
+						Temp = Temp + " " + (MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1)).toString(16).toUpperCase().padStart(4, "0");
 						break
 					default:
 						break;
@@ -1992,8 +2052,123 @@ console.log("HALT");
 				return Temp;
 			}
 			
+			function ClearMemoryA(){
+				if(RAMASpace == 0){
+					RAM.fill(0);
+				}else{
+					FLASH.fill(255);
+				}
+				DisplayRAM();
+			}
+			
+			function ClearMemoryB(){
+				if(RAMBSpace == 0){
+					RAM.fill(0);
+				}else{
+					FLASH.fill(255);
+				}
+				DisplayRAM();
+			}
+			
+			function DisplayBAR(){
+				let BARWindow = document.getElementById("DisplayBAR");
+				let Temp = "BAR   Page   RAM Reads   ROM Writes\n";
+				
+				for(let i = 0; i < BAR.length; i++){
+					Temp = Temp + " " + i + "     " + (BAR[i] & 63 >>> 0).toString(16).toUpperCase().padStart(2, "0");
+					switch((BAR[i] & 192) >>> 6){
+						case 0:
+							Temp = Temp + "    Disabled     Disabled\n"
+							break;
+						case 1:
+							Temp = Temp + "     Enabled     Disabled\n"
+							break;
+						case 2:
+							Temp = Temp + "    Disabled      Enabled\n"
+							break;
+						case 3:
+							Temp = Temp + "     Enabled      Enabled\n"
+							break;
+						default:
+							break;
+					}
+				}
+				
+				BARWindow.value = Temp;
+			}
+			
+			function DisplayRAM(){
+				let RAMWindow = document.getElementById("DisplayMemoryA");
+				let MemoryStart = parseInt(document.getElementById("MemoryStartA").value, 16);
+				let i = MemoryStart;
+				let Temp = "";
+				if(RAMASpace == 0){
+					while(i <= MemoryStart + 240){
+						Temp = Temp + i.toString(16).toUpperCase().padStart(4, "0") + " ";
+						for(let j = 0; j < 7; j++){
+							Temp = Temp + RAM[i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + RAM[i + 7].toString(16).toUpperCase().padStart(2, "0") + " - ";
+						for(let j = 8; j < 15; j++){
+							Temp = Temp + RAM[i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + RAM[i + 15].toString(16).toUpperCase().padStart(2, "0") + "\n";
+						i = i + 16;
+					}
+				}else{
+					while(i <= MemoryStart + 240){
+						Temp = Temp + i.toString(16).toUpperCase().padStart(4, "0") + " ";
+						for(let j = 0; j < 7; j++){
+							Temp = Temp + FlashRead(i + j).toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + FlashRead(i + 7).toString(16).toUpperCase().padStart(2, "0") + " - ";
+						for(let j = 8; j < 15; j++){
+							Temp = Temp + FlashRead(i + j).toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + FlashRead(i + 15).toString(16).toUpperCase().padStart(2, "0") + "\n";
+						i = i + 16;
+					}
+				}
+				RAMWindow.value = Temp;
+				
+				MemoryStart = parseInt(document.getElementById("MemoryStartB").value, 16);
+				RAMWindow = document.getElementById("DisplayMemoryB");
+				i = MemoryStart;
+				Temp = "";
+				if(RAMBSpace == 0){
+					while(i <= MemoryStart + 240){
+						Temp = Temp + i.toString(16).toUpperCase().padStart(4, "0") + " ";
+						for(let j = 0; j < 7; j++){
+							Temp = Temp + RAM[i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + RAM[i + 7].toString(16).toUpperCase().padStart(2, "0") + " - ";
+						for(let j = 8; j < 15; j++){
+							Temp = Temp + RAM[i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + RAM[i + 15].toString(16).toUpperCase().padStart(2, "0") + "\n";
+						i = i + 16;
+					}
+				}else{
+					while(i <= MemoryStart + 240){
+						Temp = Temp + i.toString(16).toUpperCase().padStart(4, "0") + " ";
+						for(let j = 0; j < 7; j++){
+							Temp = Temp + FlashRead(i + j).toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + FlashRead(i + 7).toString(16).toUpperCase().padStart(2, "0") + " - ";
+						for(let j = 8; j < 15; j++){
+							Temp = Temp + FlashRead(i + j).toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + FlashRead(i + 15).toString(16).toUpperCase().padStart(2, "0") + "\n";
+						i = i + 16;
+					}
+				}
+				RAMWindow.value = Temp;
+			}
+			
 			function DisplayRegisters(){
+				let RegisterWindow = document.getElementById("DisplayRegisters");
 				let FlagString = "";
+				let Temp = "";
 				if(SF == 0){
 					FlagString = FlagString + "\u00A0P\u00A0";
 				}else{
@@ -2019,27 +2194,54 @@ console.log("HALT");
 				}else{
 					FlagString = FlagString + "\u00A0C\u00A0";
 				}
-				console.log(	"AF = " + A.toString(16).toUpperCase().padStart(2, "0") + " " +
+				Temp = Temp +	"AF = " + A.toString(16).toUpperCase().padStart(2, "0") + " " +
 								(SF * 128 + ZF * 64 + AF * 16 + PF * 4 + CF).toString(16).toUpperCase().padStart(2, "0") + " " +
-								FlagString);
-				console.log(	"BC = " + B.toString(16).toUpperCase().padStart(2, "0") + " " +
+								FlagString + "\n";
+				Temp = Temp +	"BC = " + B.toString(16).toUpperCase().padStart(2, "0") + " " +
 								C.toString(16).toUpperCase().padStart(2, "0") + " [BC] = " +
-								RAMRead(B * 256 + C).toString(16).toUpperCase().padStart(2, "0"));
-				console.log(	"DE = " + D.toString(16).toUpperCase().padStart(2, "0") + " " +
+								MemoryRead(B * 256 + C).toString(16).toUpperCase().padStart(2, "0") + "\n";
+				Temp = Temp +	"DE = " + D.toString(16).toUpperCase().padStart(2, "0") + " " +
 								E.toString(16).toUpperCase().padStart(2, "0") + " [DE] = " +
-								RAMRead(D * 256 + E).toString(16).toUpperCase().padStart(2, "0"));
-				console.log(	"HL = " + H.toString(16).toUpperCase().padStart(2, "0") + " " +
+								MemoryRead(D * 256 + E).toString(16).toUpperCase().padStart(2, "0") + "\n";
+				Temp = Temp +	"HL = " + H.toString(16).toUpperCase().padStart(2, "0") + " " +
 								L.toString(16).toUpperCase().padStart(2, "0") + " [HL] = " +
-								RAMRead(H * 256 + L).toString(16).toUpperCase().padStart(2, "0"));
-				console.log(	"SP = " + SP.toString(16).toUpperCase().padStart(4, "0") + " [SP] = " +
-								(RAMRead(SP - 1) * 256 + RAMRead(SP)).toString(16).toUpperCase().padStart(4, "0"));
-				console.log(	"PC = " + PC.toString(16).toUpperCase().padStart(4, "0") + " [PC] = " +
-								RAMRead(PC).toString(16).toUpperCase().padStart(2, "0") + " " +
-								RAMRead(PC + 1).toString(16).toUpperCase().padStart(2, "0") + " " +
-								RAMRead(PC + 2).toString(16).toUpperCase().padStart(2, "0"));
-				console.log(InstructionString());
-				//console.log(RAM);
-				console.log("");
+								MemoryRead(H * 256 + L).toString(16).toUpperCase().padStart(2, "0") + "\n";
+				Temp = Temp +	"SP = " + SP.toString(16).toUpperCase().padStart(4, "0") + " [SP] = " +
+								(MemoryRead(SP - 1) * 256 + MemoryRead(SP)).toString(16).toUpperCase().padStart(4, "0") + "\n";
+				Temp = Temp +	"PC = " + PC.toString(16).toUpperCase().padStart(4, "0") + " [PC] = " +
+								MemoryRead(PC).toString(16).toUpperCase().padStart(2, "0") + " " +
+								MemoryRead(PC + 1).toString(16).toUpperCase().padStart(2, "0") + " " +
+								MemoryRead(PC + 2).toString(16).toUpperCase().padStart(2, "0") + "\n\n";
+				Temp = Temp + InstructionString();
+				RegisterWindow.value = Temp;
+
+				DisplayRAM();
+			}
+			
+			function MainboardUpdate(){
+				//Port 00 - System Control Register (SCR)
+				//Port 04 - Block Address Register 0 (BAR0)
+				//Port 05 - Block Address Register 1 (BAR1)
+				//Port 06 - Block Address Register 2 (BAR2)
+				//Port 07 - Block Address Register 3 (BAR3)
+				//Port 08 - Block Address Register 4 (BAR4)
+				//Port 09 - Block Address Register 5 (BAR5)
+				//Port 0A - Block Address Register 6 (BAR6)
+				//Port 0B - Block Address Register 7 (BAR7)
+				//Port 20 - Programmable Interval Timer 0 (PIT0)
+				//Port 22 - Programmable Interval Timer 1 (PIT1)
+				//Port 30 - Parallel I/O 0 (PIO0)
+				//Port 32 - Parallel I/O 1 (PIO1)
+				//Port 40 - Programmable Interrupt Controller 0 (PIC0)
+				//Port 44 - Programmable Interrupt Controller 1 (PIC1)
+				//Port 50 - DMA Controller 0 (DMAC0)
+				//Port 58 - DMA Controller 1 (DMAC1)
+				if(PORT[0] & 1 == 1){
+					Reset();
+				}
+				for(let i = 0; i < BAR.length; i++){
+					BAR[i] = PORT[4 + i];
+				}
 			}
 			
 			function Pause(){
@@ -2048,8 +2250,20 @@ console.log("HALT");
 			
 			function Reset(){
 				clearInterval(RefreshTask);
+				Steppoint = [];
 				PC = 0;
+				IOWrite(0, 0);
+				IOWrite(4, 0);
+				IOWrite(5, 0);
+				IOWrite(6, 0);
+				IOWrite(7, 0);
+				IOWrite(8, 0);
+				IOWrite(9, 0);
+				IOWrite(10, 0);
+				IOWrite(11, 0);
+				MainboardUpdate();
 				DisplayRegisters();
+				DisplayBAR();
 			}
 			
 			function Run(){
@@ -2058,6 +2272,7 @@ console.log("HALT");
 					Loops = 0;
 					while(ElapsedTime <= 1){
 						Fetch();
+						MainboardUpdate();
 						ElapsedTime += Delta;
 						Loops++;
 						if(Halted == true || Breakpoint.includes(PC) || Steppoint.includes(PC)){
@@ -2065,6 +2280,7 @@ console.log("HALT");
 								Steppoint.splice(Steppoint.indexOf(PC), 1);
 							}
 							DisplayRegisters();
+							DisplayBAR();
 							clearInterval(RefreshTask);
 							break;
 						}
@@ -2072,28 +2288,86 @@ console.log("HALT");
 				}, 1000);
 			}
 			
-			function SingleStep(){
-				Fetch();
-				DisplayRegisters();
+			function Step(){
+				var StepCount = parseInt(document.getElementById("StepCount").value);
+				for(let i = 0; i < StepCount; i++){
+					Fetch();
+					MainboardUpdate();
+					DisplayRegisters();
+					DisplayBAR();
+				}
 			}
 			
 			function StepOver(){
-				var Address = PC + InstructionLength[RAMRead(PC)];
+				var Address = PC + InstructionLength[MemoryRead(PC)];
 				if(!Steppoint.includes(Address)){
 					Steppoint.push(Address);
 				}
 				Run();
 			}
-			//document.getElementById("contents").innerHTML = SourceText;
+			
+			function ToggleMemoryA(){
+				if(document.getElementById("MemoryToggleA").checked == true){
+					RAMASpace = 1;
+				}else{
+					RAMASpace = 0;
+				}
+				DisplayRAM();
+			}
+			
+			function ToggleMemoryB(){
+				if(document.getElementById("MemoryToggleB").checked == true){
+					RAMBSpace = 1;
+				}else{
+					RAMBSpace = 0;
+				}
+				DisplayRAM();
+			}
+			//document.getElementById("hexfile").innerHTML = SourceText;
 		</script>
-		<button onclick="openFile()">Open a file</button>
-		<input id="inp" type='file' style="visibility:hidden;" onchange="readFile(event)" />
-		<button onclick="Reset()">Reset</button>
-		<button onclick="Pause()">Pause</button>
-		<button onclick="BreakpointToggle()">Toggle Breakpoint</button>
-		<button onclick="SingleStep()">Single Step</button>
-		<button onclick="StepOver()">Step Over</button>
-		<button onclick="Run()">Run</button>
-		<pre id="contents"></pre>
+		
+		<div>
+			<button onclick="openFile()">Open a file</button>
+			<input id="inp" type='file' style="visibility:hidden;" onchange="readFile(event)" accept=".hex"></input>
+			Page<input type="text" id="LoadPage" value="00"></input>
+			Offset<input type="text" id="LoadOffset" value="0000"></input>
+			<input type="checkbox" id="LoadToggle">Load to RAM
+		</div>
+		
+		<div>
+			<button onclick="Reset()">Reset</button>
+			<button onclick="Pause()">Pause</button>
+			<button onclick="BreakpointToggle()">Toggle Breakpoint</button>
+			<button onclick="Step()">Single Step</button>
+			<button onclick="StepOver()">Step Over</button>
+			<button onclick="Run()">Run</button>
+			<input type="text" id="StepCount" value="1" style="display:block"></input>
+		</div>
+		
+		<div>
+			<div>
+				<textarea id="DisplayMemoryA" rows="17" cols="55" disabled="true" style="display:block"></textarea>
+				<div style="display:block">
+					<input type="text" id="MemoryStartA" value="0000"></input>
+					<input type="checkbox" id="MemoryToggleA" checked="true" onclick="ToggleMemoryA()">Show Flash
+					<button onclick="ClearMemoryA()">Clear</button>
+				</div>
+			</div>
+			<div>
+				<textarea id="DisplayMemoryB" rows="17" cols="55" disabled="true" style="display:block"></textarea>
+				<div style="display:block">
+					<input type="text" id="MemoryStartB" value="0000"></input>
+					<input type="checkbox" id="MemoryToggleB" onclick="ToggleMemoryB()">Show Flash
+					<button onclick="ClearMemoryB()">Clear</button>
+				</div>
+			</div>
+			
+			<textarea id="DisplayRegisters" rows="9" cols="25" disabled="true" style="display:block"></textarea>
+		</div>
+		
+		<div>
+			<textarea id="DisplayBAR" rows="10" cols="35" disabled="true"></textarea>
+		</div>
+		<div id="hexfile"></div>
 	</body>
 </html>
