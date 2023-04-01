@@ -1,0 +1,2099 @@
+<!DOCTYPE html>
+<!-- ;* Yggdrasil (TM) Core Operating System (MCS-80/85): System Emulation Tool
+;* Copyright (C) DeRemee Systems, IXE Electronics LLC
+;* Portions copyright IXE Electronics LLC, Republic Robotics,
+;* FemtoLaunch, FemtoSat, FemtoTrack, Weland
+;* This work is made available under the Creative Commons
+;* Attribution-NonCommercial-ShareAlike 4.0 International License.
+;* To view a copy of this license, visit
+;* http://creativecommons.org/licenses/by-nc-sa/4.0/. -->
+<html>
+	<head>
+		<title>
+			8085 Assembler & System Emulator
+		</title>
+		<meta http-equiv="content-type" content="text/html; charset=UTF-8" >
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	</head> 
+	<body> 
+		<script>
+			var RAMSize = 65536;
+			var RAM = Array(RAMSize).fill(0);
+			var PORT = Array(256).fill(0);
+			var Halted = false;
+			var RefreshTask;
+			var Breakpoint = [];
+			var	Steppoint = [];
+			
+			function openFile(){
+				document.getElementById('inp').click();
+			}
+			function readFile(e){
+				var file = e.target.files[0];
+				if (!file) return;
+				var reader = new FileReader();
+				reader.onload = function(e){
+					document.getElementById('contents').innerHTML = e.target.result;
+					Decode();
+					Reset();
+				}
+				reader.readAsText(file);
+			}
+			
+			function Decode(){
+				var Buffer = "";
+				var Line = [];
+				var FileData = document.getElementById('contents').innerHTML;
+				document.getElementById('contents').innerHTML = "";
+				for(let i = 0; i < FileData.length; i++){
+					if(FileData[i] == '\n'){
+						Line.push(Buffer);
+						Buffer = "";
+					}else{
+						Buffer += FileData[i];
+					}
+				}
+				for(let i = 0; i < Line.length; i++){
+					var ByteCount;
+					var Address;
+					Buffer = Line[i];
+					if(Buffer.substring(0, 1) == ":"){
+						ByteCount = parseInt(Buffer.substring(1, 3), 16);
+						Address = parseInt(Buffer.substring(3, 7), 16);
+						Type = parseInt(Buffer.substring(7, 9), 16);
+						if(Type == 0){
+							for(let j = 0; j < ByteCount * 2; j = j + 2){
+								RAM[Address] = parseInt(Buffer.substring(9 + j, 9 + j + 2), 16);
+								Address = Address + 1;
+							}
+						}else{
+							if(parseInt(Buffer.substring(9, 11), 16) != 255){
+								alert("Error: Incorrect end of file");
+							}
+						}
+					}
+				}
+			}
+		</script>
+		<script>
+			//Internal state
+			var A = 0;
+			var B = 0;
+			var C = 0;
+			var D = 0;
+			var E = 0;
+			var H = 0;
+			var L = 0;
+			var PC = 0;
+			var SP = 0;
+			var FLAGS;
+			var ZF = 0;
+			var SF = 0;
+			var PF = 0;
+			var AF = 0;
+			var CF = 0;
+		
+			var ClockSpeed = 10000000;
+			var Delta = 1 / ClockSpeed;
+			var ClockLevel = 0;
+			var ElapsedTime = 0;
+			var Loops = 0;
+			
+			//Instruction Byte Counts
+			InstructionLength = [
+				1, 3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1,
+				1, 3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1,
+				1, 3, 3, 1, 1, 1, 2, 1, 1, 1, 3, 1, 1, 1, 2, 1,
+				1, 3, 3, 1, 1, 1, 2, 1, 1, 1, 3, 1, 1, 1, 2, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 3, 3, 3, 1, 2, 1, 1, 1, 3, 1, 3, 3, 2, 1,
+				1, 1, 3, 2, 3, 1, 2, 1, 1, 1, 3, 2, 3, 1, 2, 1,
+				1, 1, 3, 1, 3, 1, 2, 1, 1, 1, 3, 1, 3, 1, 2, 1,
+				1, 1, 3, 1, 3, 1, 2, 1, 1, 1, 3, 1, 3, 1, 2, 1
+			];
+			
+			//Instruction Mnemonics
+			Mnemonic = [
+				"NOP",
+				"LXI B,w",
+				"STAXb",
+				"INX B",
+				"INR B",
+				"DCR B",
+				"MVI B,b",
+				"RLC",
+				"[DSUB]",
+				"DAD B",
+				"LDAX B",
+				"DCX B",
+				"INR C",
+				"DCR C",
+				"MVI C,b",
+				"RRC",
+				"[AHRL]",
+				"LXI D,w",
+				"STAX D",
+				"INX D",
+				"INR D",
+				"DCR D",
+				"MVI D,b",
+				"RAL",
+				"[RDEL]",
+				"DAD D",
+				"LDAX D",
+				"DCX D",
+				"INR E",
+				"DCR E",
+				"MVI E,b",
+				"RAR",
+				"RIM",
+				"LXI H,w",
+				"SHLDw",
+				"INX H",
+				"INR H",
+				"DCR H",
+				"MVI H,b",
+				"DAA",
+				"[LDHI]",
+				"DAD H",
+				"LHLDw",
+				"DCX H",
+				"INR L",
+				"DCR L",
+				"MVI L,b",
+				"CMA",
+				"SIM",
+				"LXI SP,w",
+				"STAw",
+				"INX SP",
+				"INR M",
+				"DCR M",
+				"MVI M,b",
+				"STC",
+				"[LDSI]",
+				"DAD SP",
+				"LDAw",
+				"DCX SP",
+				"INR A",
+				"DCR A",
+				"MVI A,b",
+				"CMC",
+				"MOV B,b",
+				"MOV B, C",
+				"MOV B, D",
+				"MOV B, E",
+				"MOV B, H",
+				"MOV B, L",
+				"MOV B, M",
+				"MOV B, A",
+				"MOV C,b",
+				"MOV C, C",
+				"MOV C, D",
+				"MOV C, E",
+				"MOV C, H",
+				"MOV C, L",
+				"MOV C, M",
+				"MOV C, A",
+				"MOV D,b",
+				"MOV D, C",
+				"MOV D, D",
+				"MOV D, E",
+				"MOV D, H",
+				"MOV D, L",
+				"MOV D, M",
+				"MOV D, A",
+				"MOV E,b",
+				"MOV E, C",
+				"MOV E, D",
+				"MOV E, E",
+				"MOV E, H",
+				"MOV E, L",
+				"MOV E, M",
+				"MOV E, A",
+				"MOV H,b",
+				"MOV H, C",
+				"MOV H, D",
+				"MOV H, E",
+				"MOV H, H",
+				"MOV H, L",
+				"MOV H, M",
+				"MOV H, A",
+				"MOV L,b",
+				"MOV L, C",
+				"MOV L, D",
+				"MOV L, E",
+				"MOV L, H",
+				"MOV L, L",
+				"MOV L, M",
+				"MOV L, A",
+				"MOV M,b",
+				"MOV M, C",
+				"MOV M, D",
+				"MOV M, E",
+				"MOV M, H",
+				"MOV M, L",
+				"HLT",
+				"MOV M, A",
+				"MOV A, B",
+				"MOV A, C",
+				"MOV A, D",
+				"MOV A, E",
+				"MOV A, H",
+				"MOV A, L",
+				"MOV A, M",
+				"MOV A, A",
+				"ADDb",
+				"ADD C",
+				"ADD D",
+				"ADD E",
+				"ADD H",
+				"ADD L",
+				"ADD M",
+				"ADD A",
+				"ADCb",
+				"ADC C",
+				"ADC D",
+				"ADC E",
+				"ADC H",
+				"ADC L",
+				"ADC M",
+				"ADC A",
+				"SUBb",
+				"SUB C",
+				"SUB D",
+				"SUB E",
+				"SUB H",
+				"SUB L",
+				"SUB M",
+				"SUB A",
+				"SBCb",
+				"SBC C",
+				"SBC D",
+				"SBC E",
+				"SBC H",
+				"SBC L",
+				"SBC M",
+				"SBC A",
+				"ANAb",
+				"ANA C",
+				"ANA D",
+				"ANA E",
+				"ANA H",
+				"ANA L",
+				"ANA M",
+				"ANA A",
+				"XRAb",
+				"XRA C",
+				"XRA D",
+				"XRA E",
+				"XRA H",
+				"XRA L",
+				"XRA M",
+				"XRA A",
+				"ORAb",
+				"ORA C",
+				"ORA D",
+				"ORA E",
+				"ORA H",
+				"ORA L",
+				"ORA M",
+				"ORA A",
+				"CMPb",
+				"CMP C",
+				"CMP D",
+				"CMP E",
+				"CMP H",
+				"CMP L",
+				"CMP M",
+				"CMP A",
+				"RNZ",
+				"POPb",
+				"JNZw",
+				"JMPw",
+				"CNZw",
+				"PUSHb",
+				"ADIb",
+				"RST 0",
+				"RZ",
+				"RET",
+				"JZw",
+				"[RSTV]",
+				"CZw",
+				"CALLw",
+				"ACIb",
+				"RST 1",
+				"RNC",
+				"POP D",
+				"JNCw",
+				"OUTb",
+				"CNCw",
+				"PUSH D",
+				"SUIb",
+				"RST 2",
+				"RC",
+				"[SHLX]",
+				"JCw",
+				"INb",
+				"CCw",
+				"[JNUI]",
+				"SBIb",
+				"RST 3",
+				"RPO",
+				"POP H",
+				"JPOw",
+				"XTHL",
+				"CPOw",
+				"PUSH H",
+				"ANIb",
+				"RST 4",
+				"RPE",
+				"PCHL",
+				"JPEw",
+				"XCHG",
+				"CPEw",
+				"[LHLX]",
+				"XRIb",
+				"RST 5",
+				"RP",
+				"POP PSW",
+				"JPw",
+				"DI",
+				"CPw",
+				"PUSH PSW",
+				"ORIb",
+				"RST 6",
+				"RM",
+				"SPHL",
+				"JMw",
+				"EI",
+				"CMw",
+				"[JUI]",
+				"CPIb",
+				"RST 7",
+			];
+			
+			//Instruction implementations
+			InstructionMatrix = [
+				//NOP
+				function Inst00(){
+					PC++;
+				},
+				//LXI B, nnnn
+				function Inst01(){
+					PC++;
+					C = RAMRead(PC);
+					PC++;
+					B = RAMRead(PC);
+					PC++;
+				},
+				//STAX B
+				function Inst02(){
+					RAMWrite(B * 256 + C, A);
+					PC++;
+				},
+				//INX B
+				function Inst03(){
+					C++;
+					if(C > 255){
+						C = 0;
+						B++;
+						if(B > 255){
+							B = 0;
+						}
+					}
+					PC++;
+				},
+				//INR B
+				function Inst04(){
+					B++;
+					if(B > 255){
+						B = 0;
+					}
+					UpdateFlagsID(B);
+					PC++;
+				},
+				//DCR B
+				function Inst05(){
+					B--;
+					if(B < 0){
+						B = 255;
+					}
+					UpdateFlagsID(B);
+					PC++;
+				},
+				//MVI B, nn
+				function Inst06(){
+					PC++;
+					B = RAMRead(PC);
+					PC++;
+				},
+				//RLC
+				function Inst07(){
+					Temp = A & 128;
+					A = (A * 2 + Temp) & 255 >>> 0;
+					CF = Temp;
+					PC++;
+				},
+				//DSUB
+				function Inst08(){
+					PC++;
+				},
+				//DAD B
+				function Inst09(){
+					Temp = (H * 256 + L) + (B * 256 + C);
+					if(Temp > 65535){
+						CF = 1;
+					}else{
+						CF = 0;
+					}
+					H = Math.floor(Temp / 256);
+					L = Temp % 256;
+					PC++;
+				},
+				//LDAX B
+				function Inst0A(){
+					A = RAMRead(B * 256 + C);
+					PC++;
+				},
+				//DCX B
+				function Inst0B(){
+					C--;
+					if(C < 0){
+						C = 255;
+						B--;
+						if(B < 0){
+							B = 255;
+						}
+					}
+					PC++;
+				},
+				//INR C
+				function Inst0C(){
+					C++;
+					if(C > 255){
+						C = 0;
+					}
+					UpdateFlagsID(C);
+					PC++;
+				},
+				//DCR C
+				function Inst0D(){
+					C--;
+					if(C < 0){
+						C = 255;
+					}
+					UpdateFlagsID(C);
+					PC++;
+				},
+				//MVI C, nn
+				function Inst0E(){
+					PC++;
+					C = RAMRead(PC);
+					PC++;
+				},
+				//RRC
+				function Inst0F(){
+					Temp = A & 1;
+					A = (A >>> 1 + Temp) & 255 >>> 0;
+					CF = Temp;
+					PC++;
+				},
+				//AHRL
+				function Inst10(){
+					PC++;
+				},
+				//LXI D, nnnn
+				function Inst11(){
+					PC++;
+					E = RAMRead(PC);
+					PC++;
+					D = RAMRead(PC);
+					PC++;
+				},
+				//STAX D
+				function Inst12(){
+					RAMWrite(D * 256 + E, A);
+					PC++;
+				},
+				//INX D
+				function Inst13(){
+					E++;
+					if(E > 255){
+						E = 0;
+						D++;
+						if(D > 255){
+							D = 0;
+						}
+					}
+					PC++;
+				},
+				//INR D
+				function Inst14(){
+					D++;
+					if(D > 255){
+						D = 0;
+					}
+					UpdateFlagsID(D);
+					PC++;
+				},
+				//DCR D
+				function Inst15(){
+					D--;
+					if(D < 0){
+						D = 255;
+					}
+					UpdateFlagsID(D);
+					PC++;
+				},
+				//MVI D, nn
+				function Inst16(){
+					PC++;
+					D = RAMRead(PC);
+					PC++;
+				},
+				//RAL
+				function Inst17(){
+					Temp = A & 128;
+					A = (A * 2 + CF) & 255 >>> 0;
+					CF = Temp;
+					PC++;
+				},
+				//RDEL
+				function Inst18(){
+					PC++;
+				},
+				//DAD D
+				function Inst19(){
+					Temp = (H * 256 + L) + (D * 256 + E);
+					if(Temp > 65535){
+						CF = 1;
+					}else{
+						CF = 0;
+					}
+					H = Math.floor(Temp / 256);
+					L = Temp % 256;
+					PC++;
+				},
+				//LDAX D
+				function Inst1A(){
+					A = RAMRead(D * 256 + E);
+					PC++;
+				},
+				//DCX D
+				function Inst1B(){
+					E--;
+					if(E < 0){
+						E = 255;
+						D--;
+						if(D < 0){
+							D = 255;
+						}
+					}
+					PC++;
+				},
+				//INR E
+				function Inst1C(){
+					E++;
+					if(E > 255){
+						E = 0;
+					}
+					UpdateFlagsID(E);
+					PC++;
+				},
+				//DCR E
+				function Inst1D(){
+					E--;
+					if(E < 0){
+						E = 255;
+					}
+					UpdateFlagsID(E);
+					PC++;
+				},
+				//MVI E, nn
+				function Inst1E(){
+					PC++;
+					E = RAMRead(PC);
+					PC++;
+				},
+				//RAR
+				function Inst1F(){
+					Temp = A & 1;
+					A = (A >>> 1 + CF) & 255 >>> 0;
+					CF = Temp;
+					PC++;
+				},
+				//RIM
+				function Inst20(){
+					PC++;
+				},
+				//LXI H, nnnn
+				function Inst21(){
+					PC++;
+					L = RAMRead(PC);
+					PC++;
+					H = RAMRead(PC);
+					PC++;
+				},
+				//SHLD
+				function Inst22(){
+					RAMWrite(RAMRead(PC + 2) * 256 + RAMRead(PC + 1), L);
+					RAMWrite(RAMRead(PC + 2) * 256 + RAMRead(PC + 1) + 1, H);
+					PC = PC + 3;
+				},
+				//INX H
+				function Inst23(){
+					L++;
+					if(L > 255){
+						L = 0;
+						H++;
+						if(H > 255){
+							H = 0;
+						}
+					}
+					PC++;
+				},
+				//INR H
+				function Inst24(){
+					H++;
+					if(H > 255){
+						H = 0;
+					}
+					UpdateFlagsID(H);
+					PC++;
+				},
+				//DCR H
+				function Inst25(){
+					H--;
+					if(H < 0){
+						H = 255;
+					}
+					UpdateFlagsID(H);
+					PC++;
+				},
+				//MVI H, nn
+				function Inst26(){
+					PC++;
+					H = RAMRead(PC);
+					PC++;
+				},
+				//DAA
+				function Inst27(){
+					PC++;
+				},
+				//LDHI
+				function Inst28(){
+					PC++;
+				},
+				//DAD H
+				function Inst29(){
+					Temp = (H * 256 + L) + (H * 256 + L);
+					if(Temp > 65535){
+						CF = 1;
+					}else{
+						CF = 0;
+					}
+					H = Math.floor(Temp / 256);
+					L = Temp % 256;
+					PC++;
+				},
+				//LHLD
+				function Inst2A(){
+					L = RAMRead(RAMRead(PC + 2) * 256 + RAMRead(PC + 1));
+					H = RAMRead(RAMRead(PC + 2) * 256 + RAMRead(PC + 1) + 1);
+					PC = PC + 3;
+				},
+				//DCX H
+				function Inst2B(){
+					L--;
+					if(L < 0){
+						L = 255;
+						H--;
+						if(H < 0){
+							H = 255;
+						}
+					}
+					PC++;
+				},
+				//INR L
+				function Inst2C(){
+					L++;
+					if(L > 255){
+						L = 0;
+					}
+					UpdateFlagsID(L);
+					PC++;
+				},
+				//DCR L
+				function Inst2D(){
+					L--;
+					if(L < 0){
+						L = 255;
+					}
+					UpdateFlagsID(L);
+					PC++;
+				},
+				//MVI L, nn
+				function Inst2E(){
+					PC++;
+					L = RAMRead(PC);
+					PC++;
+				},
+				//CMA
+				function Inst2F(){
+					A = (255 - A) & 255;
+					PC++;
+				},
+				//SIM
+				function Inst30(){
+					PC++;
+				},
+				//LXI SP, nnnn
+				function Inst31(){
+					SP = RAMRead(PC + 2) * 256 + RAMRead(PC + 1);
+					PC = PC + 3;
+				},
+				//STA nnnn
+				function Inst32(){
+					RAMWrite(RAMRead(PC + 2) * 256 + RAMRead(PC + 1), A);
+					PC = PC + 3;
+				},
+				//INX SP
+				function Inst33(){
+					SP++
+					if(SP > 65535){
+						SP = 0;
+					}
+					PC++;
+				},
+				//INR M
+				function Inst34(){
+					RAMWrite(RAMRead(H * 256 + L) + 1);
+					UpdateFlagsID(RAMRead(H * 256 + L));
+					PC++;
+				},
+				//DCR M
+				function Inst35(){
+					RAMWrite(RAMRead(H * 256 + L) - 1);
+					UpdateFlagsID(RAMRead(H * 256 + L));
+					PC++;
+				},
+				//MVI M, nn
+				function Inst36(){
+					PC++;
+					RAMWrite(H * 256 + L, RAMRead(PC));
+					PC++;
+				},
+				//STC
+				function Inst37(){
+					CF = 1;
+					PC++;
+				},
+				//LDSI
+				function Inst38(){
+					PC++;
+				},
+				//DAD SP
+				function Inst39(){
+					Temp = (H * 256 + L) + SP;
+					H = Math.floor(Temp / 256);
+					L = Temp % 256;
+					PC++;
+				},
+				//LDA nnnn
+				function Inst3A(){
+					A = RAMRead(RAMRead(PC + 2) * 256 + RAMRead(PC + 1), A);
+					PC = PC + 3;
+				},
+				//DCX SP
+				function Inst3B(){
+					SP--;
+					if(SP < 0){
+						SP = 65535;
+					}
+					PC++;
+				},
+				//INR A
+				function Inst3C(){
+					A++;
+					if(A > 255){
+						A = 0;
+					}
+					UpdateFlagsID(A);
+					PC++;
+				},
+				//DCR A
+				function Inst3D(){
+					A--;
+					if(A < 0){
+						A = 255;
+					}
+					UpdateFlagsID(A);
+					PC++;
+				},
+				//MVI A, nn
+				function Inst3E(){
+					PC++;
+					A = RAMRead(PC);
+					PC++;
+				},
+				//CMC
+				function Inst3F(){
+					CF = CF ^ 1;
+					PC++;
+				},
+				//MOV B, B
+				function Inst40(){
+					B = B;
+					PC++;
+				},
+				//MOV B, C
+				function Inst41(){
+					B = C;
+					PC++;
+				},
+				//MOV B, D
+				function Inst42(){
+					B = D;
+					PC++;
+				},
+				//MOV B, E
+				function Inst43(){
+					B = E;
+					PC++;
+				},
+				//MOV B, H
+				function Inst44(){
+					B = H;
+					PC++;
+				},
+				//MOV B, L
+				function Inst45(){
+					B = L;
+					PC++;
+				},
+				//MOV B, M
+				function Inst46(){
+					B = RAMRead(H * 256 + L);
+					PC++;
+				},
+				//MOV B, A
+				function Inst47(){
+					B = A;
+					PC++;
+				},
+				//MOV C, B
+				function Inst40(){
+					C = B;
+					PC++;
+				},
+				//MOV C, C
+				function Inst41(){
+					C = C;
+					PC++;
+				},
+				//MOV C, D
+				function Inst42(){
+					C = D;
+					PC++;
+				},
+				//MOV C, E
+				function Inst43(){
+					C = E;
+					PC++;
+				},
+				//MOV C, H
+				function Inst44(){
+					C = H;
+					PC++;
+				},
+				//MOV C, L
+				function Inst45(){
+					C = L;
+					PC++;
+				},
+				//MOV C, M
+				function Inst46(){
+					C = RAMRead(H * 256 + L);
+					PC++;
+				},
+				//MOV C, A
+				function Inst47(){
+					C = A;
+					PC++;
+				},
+				//MOV D, B
+				function Inst50(){
+					D = B;
+					PC++;
+				},
+				//MOV D, C
+				function Inst51(){
+					D = C;
+					PC++;
+				},
+				//MOV D, D
+				function Inst52(){
+					D = D;
+					PC++;
+				},
+				//MOV D, E
+				function Inst53(){
+					D = E;
+					PC++;
+				},
+				//MOV D, H
+				function Inst54(){
+					D = H;
+					PC++;
+				},
+				//MOV D, L
+				function Inst55(){
+					D = L;
+					PC++;
+				},
+				//MOV D, M
+				function Inst56(){
+					D = RAMRead(H * 256 + L);
+					PC++;
+				},
+				//MOV D, A
+				function Inst57(){
+					D = A;
+					PC++;
+				},
+				//MOV E, B
+				function Inst58(){
+					E = B;
+					PC++;
+				},
+				//MOV E, C
+				function Inst59(){
+					E = C;
+					PC++;
+				},
+				//MOV E, D
+				function Inst5A(){
+					E = D;
+					PC++;
+				},
+				//MOV E, E
+				function Inst5B(){
+					E = E;
+					PC++;
+				},
+				//MOV E, H
+				function Inst5C(){
+					E = H;
+					PC++;
+				},
+				//MOV E, L
+				function Inst5D(){
+					E = L;
+					PC++;
+				},
+				//MOV E, M
+				function Inst5E(){
+					E = RAMRead(H * 256 + L);
+					PC++;
+				},
+				//MOV E, A
+				function Inst5F(){
+					E = A;
+					PC++;
+				},
+				//MOV H, B
+				function Inst60(){
+					H = B;
+					PC++;
+				},
+				//MOV H, C
+				function Inst61(){
+					H = C;
+					PC++;
+				},
+				//MOV H, D
+				function Inst62(){
+					H = D;
+					PC++;
+				},
+				//MOV H, E
+				function Inst63(){
+					H = E;
+					PC++;
+				},
+				//MOV H, H
+				function Inst64(){
+					H = H;
+					PC++;
+				},
+				//MOV H, L
+				function Inst65(){
+					H = L;
+					PC++;
+				},
+				//MOV H, M
+				function Inst66(){
+					H = RAMRead(H * 256 + L);
+					PC++;
+				},
+				//MOV H, A
+				function Inst67(){
+					H = A;
+					PC++;
+				},
+				//MOV L, B
+				function Inst68(){
+					L = B;
+					PC++;
+				},
+				//MOV L, C
+				function Inst69(){
+					L = C;
+					PC++;
+				},
+				//MOV L, D
+				function Inst6A(){
+					L = D;
+					PC++;
+				},
+				//MOV L, E
+				function Inst6B(){
+					L = E;
+					PC++;
+				},
+				//MOV L, H
+				function Inst6C(){
+					L = H;
+					PC++;
+				},
+				//MOV L, L
+				function Inst6D(){
+					L = L;
+					PC++;
+				},
+				//MOV L, M
+				function Inst6E(){
+					L = RAMRead(H * 256 + L);
+					PC++;
+				},
+				//MOV L, A
+				function Inst6F(){
+					L = A;
+					PC++;
+				},
+				//MOV M, B
+				function Inst70(){
+					PC++;
+				},
+				//MOV M, C
+				function Inst71(){
+					RAMWrite(H * 256 + L, C);
+					PC++;
+				},
+				//MOV M, D
+				function Inst72(){
+					RAMWrite(H * 256 + L, D);
+					PC++;
+				},
+				//MOV M, E
+				function Inst73(){
+					RAMWrite(H * 256 + L, E);
+					PC++;
+				},
+				//MOV M, H
+				function Inst74(){
+					RAMWrite(H * 256 + L, H);
+					PC++;
+				},
+				//MOV M, L
+				function Inst75(){
+					RAMWrite(H * 256 + L, L);
+					PC++;
+				},
+				//HLT
+				function Inst76(){
+Halted = true;
+console.log("HALT");
+				},
+				//MOV M, A
+				function Inst77(){
+					RAMWrite(H * 256 + L, A);
+					PC++;
+				},
+				//MOV A, B
+				function Inst78(){
+					A = B;
+					PC++;
+				},
+				//MOV A, C
+				function Inst79(){
+					A = C;
+					PC++;
+				},
+				//MOV A, D
+				function Inst7A(){
+					A = D;
+					PC++;
+				},
+				//MOV A, E
+				function Inst7B(){
+					A = E;
+					PC++;
+				},
+				//MOV A, H
+				function Inst7C(){
+					A = H;
+					PC++;
+				},
+				//MOV A, L
+				function Inst7D(){
+					A = L;
+					PC++;
+				},
+				//MOV A, M
+				function Inst7E(){
+					A = RAMRead(H * 256 + L);
+					PC++;
+				},
+				//MOV A, A
+				function Inst7F(){
+					A = A;
+					PC++;
+				},
+				//ADD B
+				function Inst80(){
+					ADD(B);
+				},
+				//ADD C
+				function Inst81(){
+					ADD(C);
+				},
+				//ADD D
+				function Inst82(){
+					ADD(D);
+				},
+				//ADD E
+				function Inst83(){
+					ADD(E);
+				},
+				//ADD H
+				function Inst84(){
+					ADD(H);
+				},
+				//ADD L
+				function Inst85(){
+					ADD(L);
+				},
+				//ADD M
+				function Inst86(){
+					ADD(RAMRead(H * 256 + L));
+				},
+				//ADD A
+				function Inst87(){
+					ADD(A);
+				},
+				//ADC B
+				function Inst88(){
+					ADC(B);
+				},
+				//ADC C
+				function Inst89(){
+					ADC(C);
+				},
+				//ADC D
+				function Inst8A(){
+					ADC(D);
+				},
+				//ADC E
+				function Inst8B(){
+					ADC(E);
+				},
+				//ADC H
+				function Inst8C(){
+					ADC(H);
+				},
+				//ADC L
+				function Inst8D(){
+					ADC(L);
+				},
+				//ADC M
+				function Inst8E(){
+					ADC(RAMRead(H * 256 + L));
+				},
+				//ADC A
+				function Inst8F(){
+					ADC(A);
+				},
+				//SUB B
+				function Inst90(){
+					SUB(B);
+				},
+				//SUB C
+				function Inst91(){
+					SUB(C);
+				},
+				//SUB D
+				function Inst92(){
+					SUB(D);
+				},
+				//SUB E
+				function Inst93(){
+					SUB(E);
+				},
+				//SUB H
+				function Inst94(){
+					SUB(H);
+				},
+				//SUB L
+				function Inst95(){
+					SUB(L);
+				},
+				//SUB M
+				function Inst96(){
+					SUB(RAMRead(H * 256 + L));
+				},
+				//SUB A
+				function Inst97(){
+					SUB(A);
+				},
+				//SBB B
+				function Inst98(){
+					SBB(B);
+				},
+				//SBB C
+				function Inst99(){
+					SBB(C);
+				},
+				//SBB D
+				function Inst9A(){
+					SBB(D);
+				},
+				//SBB E
+				function Inst9B(){
+					SBB(E);
+				},
+				//SBB H
+				function Inst9C(){
+					SBB(H);
+				},
+				//SBB L
+				function Inst9D(){
+					SBB(L);
+				},
+				//SBB M
+				function Inst9E(){
+					SBB(RAMRead(H * 256 + L));
+				},
+				//SBB A
+				function Inst9F(){
+					SBB(A);
+				},
+				//ANA B
+				function InstA0(){
+					ANA(B);
+				},
+				//ANA C
+				function InstA1(){
+					ANA(C);
+				},
+				//ANA D
+				function InstA2(){
+					ANA(D);
+				},
+				//ANA E
+				function InstA3(){
+					ANA(E);
+				},
+				//ANA H
+				function InstA4(){
+					ANA(H);
+				},
+				//ANA L
+				function InstA5(){
+					ANA(L);
+				},
+				//ANA M
+				function InstA6(){
+					ANA(RAMRead(H * 256 + L));
+				},
+				//ANA A
+				function InstA7(){
+					ANA(A);
+				},
+				//XRA B
+				function InstA8(){
+					XRA(B);
+				},
+				//XRA C
+				function InstA9(){
+					XRA(C);
+				},
+				//XRA D
+				function InstAA(){
+					XRA(D);
+				},
+				//XRA E
+				function InstAB(){
+					XRA(E);
+				},
+				//XRA H
+				function InstAC(){
+					XRA(H);
+				},
+				//XRA L
+				function InstAD(){
+					XRA(L);
+				},
+				//XRA M
+				function InstAE(){
+					XRA(RAMRead(H * 256 + L));
+				},
+				//XRA A
+				function InstAF(){
+					XRA(A);
+				},
+				//ORA B
+				function InstB0(){
+					ORA(B);
+				},
+				//ORA C
+				function InstB1(){
+					ORA(C);
+				},
+				//ORA D
+				function InstB2(){
+					ORA(D);
+				},
+				//ORA E
+				function InstB3(){
+					ORA(E);
+				},
+				//ORA H
+				function InstB4(){
+					ORA(H);
+				},
+				//ORA L
+				function InstB5(){
+					ORA(L);
+				},
+				//ORA M
+				function InstB6(){
+					ORA(RAMRead(H * 256 + L));
+				},
+				//ORA A
+				function InstB7(){
+					ORA(A);
+				},
+				//CMP B
+				function InstB8(){
+					CMP(B);
+				},
+				//CMP C
+				function InstB9(){
+					CMP(C);
+				},
+				//CMP D
+				function InstBA(){
+					CMP(D);
+				},
+				//CMP E
+				function InstBB(){
+					CMP(E);
+				},
+				//CMP H
+				function InstBC(){
+					CMP(H);
+				},
+				//CMP L
+				function InstBD(){
+					CMP(L);
+				},
+				//CMP M
+				function InstBE(){
+					CMP(RAMRead(H * 256 + L));
+				},
+				//CMP A
+				function InstBF(){
+					CMP(A);
+				},
+				//RNZ
+				function InstC0(){
+					if(ZF == 0){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//POP B
+				function InstC1(){
+					C = Pop();
+					B = Pop();
+					PC++;
+				},
+				//JNZ nnnn
+				function InstC2(){
+					if(ZF == 0){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//JMP nnnn
+				function InstC3(){
+					PC = RAMRead(PC + 2) * 256 + RAMRead(PC + 1);
+				},
+				//CNZ nnnn
+				function InstC4(){
+					if(ZF == 0){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//PUSH B
+				function InstC5(){
+					Push(B);
+					Push(C);
+					PC++;
+				},
+				//ADI nn
+				function InstC6(){
+					PC++;
+					ADD(RAMRead(PC));
+				},
+				//RST 0
+				function InstC7(){
+					RST(0);
+				},
+				//RZ
+				function InstC8(){
+					if(ZF == 1){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//RET
+				function InstC9(){
+					PC = Pop() + Pop() * 256;
+				},
+				//JZ nnnn
+				function InstCA(){
+					if(ZF == 1){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//RSTV
+				function InstCB(){
+					PC++;
+				},
+				//CZ
+				function InstCC(){
+					if(ZF == 1){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//CALL nnnn
+				function InstCD(){
+					Temp = RAMRead(PC + 2) * 256 + RAMRead(PC + 1);
+					PC = PC + 3;
+					Push(PC / 256 >>> 0);
+					Push(PC % 256 >>> 0);
+					PC = Temp;
+				},
+				//ACI nn
+				function InstCE(){
+					PC++;
+					ADC(RAMRead(PC));
+				},
+				//RST 1
+				function InstCF(){
+					RST(1);
+				},
+				//RNC
+				function InstD0(){
+					if(CF == 0){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//POP D
+				function InstD1(){
+					E = Pop();
+					D = Pop();
+					PC++;
+				},
+				//JNC nnnn
+				function InstD2(){
+					if(CF == 0){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//OUT nn
+				function InstD3(){
+					PC++;
+					IOWrite(RAMRead());
+				},
+				//CNC nnnn
+				function InstD4(){
+					if(CF == 0){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//PUSH D
+				function InstD5(){
+					Push(D);
+					Push(E);
+					PC++;
+				},
+				//SUI nn
+				function InstD6(){
+					PC++;
+					SUB(RAMRead(PC));
+				},
+				//RST 2
+				function InstD7(){
+					RST(2);
+				},
+				//RC
+				function InstD8(){
+					if(CF == 1){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//SHLX
+				function InstD9(){
+					PC++;
+				},
+				//JC nnnn
+				function InstDA(){
+					if(CF == 1){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//IN nn
+				function InstDB(){
+					PC++;
+					IORead(RAMRead(PC));
+					PC++;
+				},
+				//CC nnnn
+				function InstDC(){
+					if(CF == 1){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//JNUI
+				function InstDD(){
+					PC++;
+				},
+				//SBI nn
+				function InstDE(){
+					PC++;
+					SBB(RAMRead(PC));
+				},
+				//RST 3
+				function InstDF(){
+					RST(3);
+				},
+				//RPO
+				function InstE0(){
+					if(PF == 0){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//POP H
+				function InstE1(){
+					L = Pop();
+					H = Pop();
+					PC++;
+				},
+				//JPO nnnn
+				function InstE2(){
+					if(PF == 0){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//XTHL
+				function InstE3(){
+					Temp = RAMRead(SP);
+					RAMWrite(SP, L);
+					L = Temp;
+					Temp = RAMRead(SP - 1);
+					RAMWrite(SP - 1, H);
+					H = Temp;
+					PC++;
+				},
+				//CPO nnnn
+				function InstE4(){
+					if(PF == 0){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//PUSH H
+				function InstE5(){
+					Push(H);
+					Push(L);
+					PC++;
+				},
+				//ANI nn
+				function InstE6(){
+					PC++;
+					ANA(RAMRead(PC));
+				},
+				//RST 4
+				function InstE7(){
+					RST(4);
+				},
+				//RPE
+				function InstE8(){
+					if(PF == 1){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//PCHL
+				function InstE9(){
+					PC = H * 256 + L;
+				},
+				//JPE nnnn
+				function InstEA(){
+					if(PF == 1){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//XCHG
+				function InstEB(){
+					Temp = E;
+					E = L;
+					L = Temp;
+					Temp = D;
+					D = H;
+					H = Temp;
+					PC++;
+				},
+				//CPE
+				function InstEC(){
+					if(PF == 1){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//LHLX
+				function InstED(){
+					PC++;
+				},
+				//XRI nn
+				function InstEE(){
+					PC++;
+					XRA(RAMRead(PC));
+				},
+				//RST 5
+				function InstEF(){
+					RST(5);
+				},
+				//RP
+				function InstF0(){
+					if(SF == 0){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//POP PSW
+				function InstF1(){
+					FLAGS = Pop();
+					A = Pop();
+					PC++;
+				},
+				//JP nnnn
+				function InstF2(){
+					if(SF == 0){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//DI
+				function InstF3(){
+					InterruptsEnabled = false;
+					PC++;
+				},
+				//CP nnnn
+				function InstF4(){
+					if(SF == 0){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//PUSH PSW
+				function InstF5(){
+					Push(A);
+					Push(FLAGS);
+					PC++;
+				},
+				//ORI nn
+				function InstF6(){
+					PC++;
+					ORA(RAMRead(PC));
+				},
+				//RST 6
+				function InstF7(){
+					RST(6);
+				},
+				//RM
+				function InstF8(){
+					if(SF == 1){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//SPHL
+				function InstF9(){
+					SP = H * 256 + L;
+					PC++;
+				},
+				//JM nnnn
+				function InstFA(){
+					if(SF == 1){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//EI
+				function InstFB(){
+					InterruptsEnabled = true;
+					PC++;
+				},
+				//CM
+				function InstFC(){
+					if(SF == 1){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//JUI
+				function InstFD(){
+					PC++;
+				},
+				//CPI nn
+				function InstFE(){
+					PC++;
+					CMP(RAMRead(PC));
+				},
+				//RST 7
+				function InstFF(){
+					RST(7);
+				}
+			];
+			
+			function ADC(Value){
+				A = A + Value + CF;
+				UpdateFlags(A);
+				PC++;
+			}
+			function SUB(Value){
+				A = A - Value;
+				UpdateFlags(A);
+				PC++;
+			}
+			function SBB(Value){
+				A = A - Value - CF;
+				UpdateFlags(A);
+				PC++;
+			}
+			function ADD(Value){
+				A = A + Value;
+				UpdateFlags(A);
+				PC++;
+			}
+			function ANA(Value){
+				A = A & Value;
+				UpdateFlags(A);
+				PC++;
+			}
+			function CMP(Value){
+				if(A < Value){
+					CF = 1;
+					ZF = 0;
+				}else if(A == Value){
+					CF = 0;
+					ZF = 1;
+				}else{
+					CF = 0;
+					ZF = 0;
+				}
+				PC++;
+			}
+			
+			function ORA(Value){
+				A = A | Value;
+				UpdateFlags(A);
+				PC++;
+			}
+			
+			function XRA(Value){
+				A = A ^ Value;
+				UpdateFlags(A);
+				PC++;
+			}
+			
+			function Fetch(){
+				PC = (PC & 65535) >>> 0;
+				Temp = RAMRead(PC);
+				InstructionMatrix[Temp]();
+			}
+			
+			function IORead(Address){
+				return PORT[Address & 255];
+			}
+			
+			function IOWrite(Address, Value){
+				PORT[Address & 255] = Value & 255;
+			}
+			
+			function Pop(){
+				Temp = RAMRead(SP);
+				SP++;
+				if(SP > 65535){
+					SP = 0;
+				}
+				return Temp;
+			}
+			function Push(Value){
+				SP--;
+				if(SP < 0){
+					SP = 65535;
+				}
+				RAMWrite(SP, Value);
+			}
+			
+			function Reset(){
+				PC = 0;
+			}
+			
+			function RST(Value){
+				PC++;
+				if(Value >= 0 && Value <= 7){
+					Value = Value * 8;
+					Push(PC / 256 >>> 0);
+					Push(PC % 256 >>> 0);
+					PC = Value;
+				}
+			}
+			function UpdateFlags(Value){
+				//Zero Flag
+				if(Value == 0){
+					ZF = 1;
+				}else{
+					ZF = 0;
+				}
+				//Sign Flag
+				if(Value && 128 == 1){
+					SF = 1;
+				}else{
+					SF = 0;
+				}
+				//Carry Flag
+				if(Value < 0 || Value > 255){
+					CF = 1;
+				}else{
+					CF = 0;
+				}
+				//Parity Flag
+				PF = Value ^ Value >>> 4;
+				PF = PF ^ PF >>> 2;
+				PF = PF ^ PF >>> 1;
+			}
+			
+			function UpdateFlagsID(Value){
+				//Zero Flag
+				if(Value == 0){
+					ZF = 1;
+				}else{
+					ZF = 0;
+				}
+				//Sign Flag
+				if(Value && 128 == 1){
+					SF = 1;
+				}else{
+					SF = 0;
+				}
+				//Parity Flag
+				PF = Value ^ Value >>> 4;
+				PF = PF ^ PF >>> 2;
+				PF = PF ^ PF >>> 1;
+			}
+			function RAMRead(Address){
+				return RAM[Address & RAM.length - 1];
+			}
+			function RAMWrite(Address, Value){
+				RAM[Address & RAM.length - 1] = Value & 255 >>> 0;
+			}
+			
+			function BreakpointToggle(){
+				if(Breakpoint.includes(PC)){
+					Breakpoint.splice(Breakpoint.indexOf(PC), 1);
+				}else{
+					Breakpoint.push(PC);
+				}
+			}
+			
+			function InstructionString(){
+				var Temp = Mnemonic[RAMRead(PC)];
+				switch(Temp.charAt(Temp.length - 1)){
+					case "b":
+						Temp = Temp.slice(0, -1);
+						Temp = Temp + " " + RAMRead(PC + 1).toString(16).toUpperCase().padStart(2, "0");
+						break;
+					case "w":
+						Temp = Temp.slice(0, -1);
+						Temp = Temp + " " + (RAMRead(PC + 2) * 256 + RAMRead(PC + 1)).toString(16).toUpperCase().padStart(4, "0");
+						break
+					default:
+						break;
+				}
+				return Temp;
+			}
+			
+			function DisplayRegisters(){
+				let FlagString = "";
+				if(SF == 0){
+					FlagString = FlagString + "\u00A0P\u00A0";
+				}else{
+					FlagString = FlagString + "\u00A0M\u00A0";
+				}
+				if(ZF == 0){
+					FlagString = FlagString + "NZ\u00A0";
+				}else{
+					FlagString = FlagString + "\u00A0Z\u00A0";
+				}
+				if(AF == 0){
+					FlagString = FlagString + "NA\u00A0";
+				}else{
+					FlagString = FlagString + "\u00A0A\u00A0";
+				}
+				if(PF == 0){
+					FlagString = FlagString + "PO\u00A0";
+				}else{
+					FlagString = FlagString + "PE\u00A0";
+				}
+				if(CF == 0){
+					FlagString = FlagString + "NC\u00A0";
+				}else{
+					FlagString = FlagString + "\u00A0C\u00A0";
+				}
+				console.log(	"AF = " + A.toString(16).toUpperCase().padStart(2, "0") + " " +
+								(SF * 128 + ZF * 64 + AF * 16 + PF * 4 + CF).toString(16).toUpperCase().padStart(2, "0") + " " +
+								FlagString);
+				console.log(	"BC = " + B.toString(16).toUpperCase().padStart(2, "0") + " " +
+								C.toString(16).toUpperCase().padStart(2, "0") + " [BC] = " +
+								RAMRead(B * 256 + C).toString(16).toUpperCase().padStart(2, "0"));
+				console.log(	"DE = " + D.toString(16).toUpperCase().padStart(2, "0") + " " +
+								E.toString(16).toUpperCase().padStart(2, "0") + " [DE] = " +
+								RAMRead(D * 256 + E).toString(16).toUpperCase().padStart(2, "0"));
+				console.log(	"HL = " + H.toString(16).toUpperCase().padStart(2, "0") + " " +
+								L.toString(16).toUpperCase().padStart(2, "0") + " [HL] = " +
+								RAMRead(H * 256 + L).toString(16).toUpperCase().padStart(2, "0"));
+				console.log(	"SP = " + SP.toString(16).toUpperCase().padStart(4, "0") + " [SP] = " +
+								(RAMRead(SP - 1) * 256 + RAMRead(SP)).toString(16).toUpperCase().padStart(4, "0"));
+				console.log(	"PC = " + PC.toString(16).toUpperCase().padStart(4, "0") + " [PC] = " +
+								RAMRead(PC).toString(16).toUpperCase().padStart(2, "0") + " " +
+								RAMRead(PC + 1).toString(16).toUpperCase().padStart(2, "0") + " " +
+								RAMRead(PC + 2).toString(16).toUpperCase().padStart(2, "0"));
+				console.log(InstructionString());
+				//console.log(RAM);
+				console.log("");
+			}
+			
+			function Pause(){
+				clearInterval(RefreshTask);
+			}
+			
+			function Reset(){
+				clearInterval(RefreshTask);
+				PC = 0;
+				DisplayRegisters();
+			}
+			
+			function Run(){
+				RefreshTask = setInterval(function(){
+					ElapsedTime = 0;
+					Loops = 0;
+					while(ElapsedTime <= 1){
+						Fetch();
+						ElapsedTime += Delta;
+						Loops++;
+						if(Halted == true || Breakpoint.includes(PC) || Steppoint.includes(PC)){
+							if(Steppoint.includes(PC)){
+								Steppoint.splice(Steppoint.indexOf(PC), 1);
+							}
+							DisplayRegisters();
+							clearInterval(RefreshTask);
+							break;
+						}
+					}
+				}, 1000);
+			}
+			
+			function SingleStep(){
+				Fetch();
+				DisplayRegisters();
+			}
+			
+			function StepOver(){
+				var Address = PC + InstructionLength[RAMRead(PC)];
+				if(!Steppoint.includes(Address)){
+					Steppoint.push(Address);
+				}
+				Run();
+			}
+			//document.getElementById("contents").innerHTML = SourceText;
+		</script>
+		<button onclick="openFile()">Open a file</button>
+		<input id="inp" type='file' style="visibility:hidden;" onchange="readFile(event)" />
+		<button onclick="Reset()">Reset</button>
+		<button onclick="Pause()">Pause</button>
+		<button onclick="BreakpointToggle()">Toggle Breakpoint</button>
+		<button onclick="SingleStep()">Single Step</button>
+		<button onclick="StepOver()">Step Over</button>
+		<button onclick="Run()">Run</button>
+		<pre id="contents"></pre>
+	</body>
+</html>
