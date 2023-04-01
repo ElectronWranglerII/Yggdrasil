@@ -5,3 +5,5 @@ their source code written to satisfy the opinions of the convention Nazis. They 
 "incorrect" and outright ugly their code is.
 
 If you don't like that, then you're free to browse elsewhere and save your complaints about aesthetics/conventions for someone who cares.
+
+Otherwise, enjoy!
