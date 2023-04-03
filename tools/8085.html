@@ -15,18 +15,273 @@
 		<meta http-equiv="content-type" content="text/html; charset=UTF-8" >
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	</head> 
-	<body> 
-		<script>
+	<body onload="Initialize()"> 
+		<script>			
+			class BlockAddressRegister{
+				constructor(){
+					this._Page = 0;
+					this._Port = 0;
+					this._RAMReadDisable = 0;
+					this._ROMWriteDisable = 0;
+				}
+				Page(){
+					return this._Page;
+				}
+				Port(Value){
+					this._Port = Value;
+				}
+				RAMRDIS(){
+					return this._RAMReadDisable;
+				}
+				Read(){
+					return	this._ROMWriteDisable << 7 +
+							this._RAMReadDisable << 6 +
+							this._Page;
+				}
+				Reset(){
+					this._Page = 0;
+					this._RAMReadDisable = 0;
+					this._ROMWriteDisable = 0;
+				}
+				ROMWDIS(){
+					return this._ROMWriteDisable;
+				}
+				Write(Value){
+					this._Page = (Value & 63) >>> 0;
+					this._RAMReadDisable = (Value & 64) >>> 0;
+					this._ROMWriteDisable = (Value & 128) >>> 0;
+				}
+			}
+			
+			class PIC{
+				constructor(){
+					this._ICW = Array(4).fill(0);
+					this._OCW = Array(3).fill(0);
+					this._IRR = 0;
+					this._ISR = 0;
+					this._IMR = 0;
+					this._Cascade = true;
+					this._Interval = 8;
+					this._EdgeTrigger = true;
+					this._VectorLSB = 0;
+					this._VectorMSB = 0;
+					this._SlaveMask = 0;
+					this._SlaveID = 0;
+					this._MCS85Mode = true;
+					this._AutoEOI = false;
+					this._BufferMode = 0;
+					this._SFNM = false;
+					this._SLLevel = 0;
+					this._REOIMode = 0;
+				}
+				Display(){
+					
+				}
+			}
+			
+			class PIT{
+				constructor(){
+					this._Timer = Array(3).fill(0);
+					this._Mode = Array(3).fill(0);
+					this._BCD = Array(3).fill(0);
+					this._Out = Array(3).fill(0);
+				}
+				Read(Port){
+				
+				}
+				Write(Port, Value){
+					
+				}
+			}
+			
+			class PPI8255{
+				constructor(){
+					this._Control = 0;
+					this._Pin = Array(3).fill(Array(8).fill(0));
+					this._Port = Array(3).fill(0);
+					this._Mode = Array(2).fill(0);
+					this._Direction = Array(3).fill(0);
+				}
+				Read(Port){
+					if(Port <=2 && Port >= 0){
+						return	this._Pin[Port][0] +
+								this._Pin[Port][1] << 1 +
+								this._Pin[Port][2] << 2 +
+								this._Pin[Port][3] << 3 +
+								this._Pin[Port][4] << 4 +
+								this._Pin[Port][5] << 5 +
+								this._Pin[Port][6] << 6 +
+								this._Pin[Port][7] << 7;
+					}else{
+						return 0;
+					}
+				}
+				Update(){
+					//Port 0
+					switch(this._Mode[0]){
+						case 0:
+							break;
+						case 1:
+							if(this._Pin[2][6] == 0){
+								
+							}
+							break;
+						case 2:
+							break;
+						default:
+							break;
+					}
+				}
+				Write(Port, Value){
+					Value = (Value & 255) >>> 0;
+					switch(Port){
+						case 0:
+							switch(this._Mode[0]){
+								case 0:
+									if(this._Direction[0] == 0){
+										this._Port = Value;
+									}
+									break;
+								case 1:
+									if(this._Direction[0] == 0){
+										this._Port[0] = Value;
+										if(this._Pin[2][7] == 1){
+											this._Port[2] = this._Port[2] & 127;
+										}else{
+											this._Port[2] = this._Port[2] | 128;
+										}
+									}
+									break;
+								case 2:
+									break;
+								default:
+									break;
+							}
+							break;
+						case 1:
+							
+							break;
+						case 2:
+							
+							break;
+						case 3:
+							if(Value & 128 == 0){
+								
+							}else{
+							
+							}
+							break;
+						default:
+							break;
+					}
+				}
+			}
+			
+			class GenericUART{
+				constructor(){
+					this._BaudRate = 0;
+					this._ClockSpeed = 0;
+					this._RXBuffer = 0;
+					this._RXFull = 0;
+					this._RXInput = 0;
+					this._RXInt = 0;
+					this._RXIntEnable = 0;
+					this._RXTick = 0;
+					this._TickCount = 0;
+					this._TXBuffer = 0;
+					this._TXEmpty = 0;
+					this._TXInt = 0;
+					this._TXIntEnable = 0;
+					this._TXOutput = 0;
+					this._TXTick = 0;
+					this._IRQLine = 0;
+				}
+				Baud(Value){
+					this._BaudRate = Value;
+				}
+				Read(){
+					this._RXEmpty = 1;
+					return this._RXBuffer;
+				}
+				Tick(Value){
+					//Advances the UART the specified number of clock ticks
+					this._TickCount = this._TickCount + Value;
+					if(this._TickCount >= this._RXTick){
+						this._RXBuffer = this._RXInput;
+						this._RXFull = 1;
+						if(this._RXIntEnable = 1){
+							this._RXInt = 1;
+						}
+					}
+					if(this._TickCount >= this._TXTick){
+						this._TXOutput = this._TXBuffer;
+						this._TXEmpty = 1;
+						if(this._TXIntEnable == 1){
+							this._TXInt = 1;
+						}
+					}
+					if(this._RXInt == 1 || this._TXInt == 1){
+						this._IRQLine = 1;
+					}
+				}
+				Clock(Value){
+					this._ClockSpeed = Value;
+				}
+				Write(Value){
+					if(this._TXEmpty == 0){
+						this._TXEmpty = 0;
+						this._TXBuffer = (Value & 255) >>> 0;
+						this._TXTick = this._TickCount + this._ClockSpeed / this._BaudRate;
+					}
+				}
+			}
+		
+			var A = 0;
+			var B = 0;
+			var C = 0;
+			var D = 0;
+			var E = 0;
+			var H = 0;
+			var L = 0;
+			var PC = 0;
+			var SP = 0;
+			var FLAGS;
+			var ZF = 0;
+			var SF = 0;
+			var PF = 0;
+			var AF = 0;
+			var CF = 0;
+			
+			var RAMASpace = 1;
+			var RAMBSpace = 0;
+			var Page = 0;
+		
+			var ClockSpeed = 10000000;
+			var Delta = 1 / ClockSpeed;
+			var ClockLevel = 0;
+			var ElapsedTime = 0;
+			var Loops = 0;
+			
 			var RAMSize = 1048576;
 			var RAM = Array(RAMSize).fill(0);
 			var FlashSize = 1048576;
 			var FLASH = Array(FlashSize).fill(255);
 			var PORT = Array(256).fill(0);
-			var BAR = Array(8).fill(0);
+			var BARCount = 8;
+			var BAR = [];
+			var UART;
 			var Halted = false;
 			var RefreshTask;
 			var Breakpoint = [];
-			var	Steppoint = [];
+			var	Steppoint = [];			
+		
+			function Initialize(){
+				for(let i = 0; i < BARCount; i++){
+					BAR.push(new BlockAddressRegister());
+				}
+				UART = new GenericUART();
+				Reset();
+			}
 			
 			function openFile(){
 				document.getElementById('inp').click();
@@ -99,31 +354,6 @@
 		</script>
 		<script>
 			//Internal state
-			var A = 0;
-			var B = 0;
-			var C = 0;
-			var D = 0;
-			var E = 0;
-			var H = 0;
-			var L = 0;
-			var PC = 0;
-			var SP = 0;
-			var FLAGS;
-			var ZF = 0;
-			var SF = 0;
-			var PF = 0;
-			var AF = 0;
-			var CF = 0;
-			
-			var RAMASpace = 1;
-			var RAMBSpace = 0;
-			var Page = 0;
-		
-			var ClockSpeed = 10000000;
-			var Delta = 1 / ClockSpeed;
-			var ClockLevel = 0;
-			var ElapsedTime = 0;
-			var Loops = 0;
 			
 			//Instruction Byte Counts
 			InstructionLength = [
@@ -2003,9 +2233,9 @@
 					CF = 0;
 				}
 				//Parity Flag
-				PF = Value ^ Value >>> 4;
-				PF = PF ^ PF >>> 2;
-				PF = PF ^ PF >>> 1;
+				PF = (Value & 15) ^ (Value >>> 4);
+				PF = (PF & 3) ^ (PF >>> 2);
+				PF = (PF & 1) ^ (PF >>> 1);
 			}
 			
 			function UpdateFlagsID(Value){
@@ -2028,10 +2258,20 @@
 			}
 			
 			function BreakpointToggle(){
-				if(Breakpoint.includes(PC)){
-					Breakpoint.splice(Breakpoint.indexOf(PC), 1);
+				let Temp = document.getElementById("Breakpoint").value;
+				if(Temp != ""){
+					Temp = parseInt(Temp, 16);
+					if(Breakpoint.includes(Temp)){
+						Breakpoint.splice(Breakpoint.indexOf(Temp), 1);
+					}else{
+						Breakpoint.push(Temp);
+					}
 				}else{
-					Breakpoint.push(PC);
+					if(Breakpoint.includes(PC)){
+						Breakpoint.splice(Breakpoint.indexOf(PC), 1);
+					}else{
+						Breakpoint.push(PC);
+					}
 				}
 			}
 			
@@ -2058,7 +2298,7 @@
 				}else{
 					FLASH.fill(255);
 				}
-				DisplayRAM();
+				DisplayMemory();
 			}
 			
 			function ClearMemoryB(){
@@ -2067,7 +2307,7 @@
 				}else{
 					FLASH.fill(255);
 				}
-				DisplayRAM();
+				DisplayMemory();
 			}
 			
 			function DisplayBAR(){
@@ -2075,29 +2315,22 @@
 				let Temp = "BAR   Page   RAM Reads   ROM Writes\n";
 				
 				for(let i = 0; i < BAR.length; i++){
-					Temp = Temp + " " + i + "     " + (BAR[i] & 63 >>> 0).toString(16).toUpperCase().padStart(2, "0");
-					switch((BAR[i] & 192) >>> 6){
-						case 0:
-							Temp = Temp + "    Disabled     Disabled\n"
-							break;
-						case 1:
-							Temp = Temp + "     Enabled     Disabled\n"
-							break;
-						case 2:
-							Temp = Temp + "    Disabled      Enabled\n"
-							break;
-						case 3:
-							Temp = Temp + "     Enabled      Enabled\n"
-							break;
-						default:
-							break;
+					Temp = Temp + " " + i + "     " + BAR[i].Page();
+					if(BAR[i].RAMRDIS() == 0){
+						Temp = Temp + "     Disabled";
+					}else{
+						Temp = Temp + "      Enabled";
+					}
+					if(BAR[i].ROMWDIS() == 0){
+						Temp = Temp + "     Disabled\n";
+					}else{
+						Temp = Temp + "      Enabled\n";
 					}
 				}
-				
 				BARWindow.value = Temp;
 			}
 			
-			function DisplayRAM(){
+			function DisplayMemory(){
 				let RAMWindow = document.getElementById("DisplayMemoryA");
 				let MemoryStart = parseInt(document.getElementById("MemoryStartA").value, 16);
 				let i = MemoryStart;
@@ -2165,6 +2398,15 @@
 				RAMWindow.value = Temp;
 			}
 			
+			function DisplayPIC(){
+				let PICWindow = document.getElementById("DisplayPIC");
+			}
+			
+			function DisplayPIT(){
+				let PITWindow = document.getElementById("DisplayPIT");
+				let PITSel = parseInt(document.getElementById("PITSel").value);
+			}
+			
 			function DisplayRegisters(){
 				let RegisterWindow = document.getElementById("DisplayRegisters");
 				let FlagString = "";
@@ -2215,7 +2457,7 @@
 				Temp = Temp + InstructionString();
 				RegisterWindow.value = Temp;
 
-				DisplayRAM();
+				DisplayMemory();
 			}
 			
 			function MainboardUpdate(){
@@ -2240,7 +2482,7 @@
 					Reset();
 				}
 				for(let i = 0; i < BAR.length; i++){
-					BAR[i] = PORT[4 + i];
+					BAR[i].Write(PORT[4 + i]);
 				}
 			}
 			
@@ -2261,6 +2503,9 @@
 				IOWrite(9, 0);
 				IOWrite(10, 0);
 				IOWrite(11, 0);
+				for(let i = 0; i < BAR.length; i++){
+					BAR[i].Reset();
+				}
 				MainboardUpdate();
 				DisplayRegisters();
 				DisplayBAR();
@@ -2288,6 +2533,70 @@
 				}, 1000);
 			}
 			
+			function SetBAR(){
+				let Temp = parseInt(document.getElementById("BARPage").value, 16);
+				let Reg = parseInt(document.getElementById("BARReg").value);
+				if(document.getElementById("BARRAMR").checked == true){
+					Temp = Temp + 64;
+				}
+				if(document.getElementById("BARROMW").checked == true){
+					Temp = Temp + 128;
+				}
+				BAR[Reg].Write(Temp);
+				PORT[4 + Reg] = Temp;
+				DisplayRegisters();
+				DisplayBAR();
+			}
+			
+			function SetReg(){
+				let Temp = parseInt(document.getElementById("RegValue").value, 16) & 65535 >>> 0;
+				let Reg = parseInt(document.getElementById("RegSel").value);
+				switch(Reg){
+					case 0:
+						A = Temp & 255 >>> 0;
+						break;
+					case 1:
+						B = Temp & 255 >>> 0;
+						break;
+					case 2:
+						C = Temp & 255 >>> 0;
+						break;
+					case 3:
+						D = Temp & 255 >>> 0;
+						break;
+					case 4:
+						E = Temp & 255 >>> 0;
+						break;
+					case 5:
+						H = Temp & 255 >>> 0;
+						break;
+					case 6:
+						L = Temp & 255 >>> 0;
+						break;
+					case 7:
+						B = Temp / 256 >>> 0;
+						C = Temp % 256 >>> 0;
+						break;
+					case 8:
+						D = Temp / 256 >>> 0;
+						E = Temp % 256 >>> 0;
+						break;
+					case 9:
+						H = Temp / 256 >>> 0;
+						L = Temp % 256 >>> 0;
+						break;
+					case 10:
+						SP = Temp;
+						break;
+					case 11:
+						PC = Temp;
+						break;
+					default:
+						break;
+				}
+				DisplayRegisters();
+			}
+			
 			function Step(){
 				var StepCount = parseInt(document.getElementById("StepCount").value);
 				for(let i = 0; i < StepCount; i++){
@@ -2312,7 +2621,7 @@
 				}else{
 					RAMASpace = 0;
 				}
-				DisplayRAM();
+				DisplayMemory();
 			}
 			
 			function ToggleMemoryB(){
@@ -2321,53 +2630,182 @@
 				}else{
 					RAMBSpace = 0;
 				}
-				DisplayRAM();
+				DisplayMemory();
 			}
 			//document.getElementById("hexfile").innerHTML = SourceText;
 		</script>
 		
-		<div>
-			<button onclick="openFile()">Open a file</button>
-			<input id="inp" type='file' style="visibility:hidden;" onchange="readFile(event)" accept=".hex"></input>
-			Page<input type="text" id="LoadPage" value="00"></input>
-			Offset<input type="text" id="LoadOffset" value="0000"></input>
-			<input type="checkbox" id="LoadToggle">Load to RAM
-		</div>
-		
-		<div>
-			<button onclick="Reset()">Reset</button>
-			<button onclick="Pause()">Pause</button>
-			<button onclick="BreakpointToggle()">Toggle Breakpoint</button>
-			<button onclick="Step()">Single Step</button>
-			<button onclick="StepOver()">Step Over</button>
-			<button onclick="Run()">Run</button>
-			<input type="text" id="StepCount" value="1" style="display:block"></input>
-		</div>
-		
-		<div>
-			<div>
-				<textarea id="DisplayMemoryA" rows="17" cols="55" disabled="true" style="display:block"></textarea>
-				<div style="display:block">
-					<input type="text" id="MemoryStartA" value="0000"></input>
-					<input type="checkbox" id="MemoryToggleA" checked="true" onclick="ToggleMemoryA()">Show Flash
-					<button onclick="ClearMemoryA()">Clear</button>
-				</div>
-			</div>
-			<div>
-				<textarea id="DisplayMemoryB" rows="17" cols="55" disabled="true" style="display:block"></textarea>
-				<div style="display:block">
-					<input type="text" id="MemoryStartB" value="0000"></input>
-					<input type="checkbox" id="MemoryToggleB" onclick="ToggleMemoryB()">Show Flash
-					<button onclick="ClearMemoryB()">Clear</button>
+		<div style="float:right">
+			<div style="display:block">
+				<textarea id="DisplayRegisters" rows="9" cols="25" disabled="true"></textarea>
+				<div>
+					<select id="RegSel">
+						<option value="0">A</option>
+						<option value="1">B</option>
+						<option value="2">C</option>
+						<option value="3">D</option>
+						<option value="4">E</option>
+						<option value="5">H</option>
+						<option value="6">L</option>
+						<option value="7">BC</option>
+						<option value="8">DE</option>
+						<option value="9">HL</option>
+						<option value="10">SP</option>
+						<option value="11">PC</option>
+					</select>
+					<input type="text" id="RegValue" maxlength="4" size="4" value="00"></input>
+					<button onclick="SetReg()">Set</button>
 				</div>
 			</div>
 			
-			<textarea id="DisplayRegisters" rows="9" cols="25" disabled="true" style="display:block"></textarea>
+			<div>
+				<div>
+					<button onclick="Reset()">Reset</button>
+					<button onclick="Pause()">Pause</button>
+					<button onclick="Step()">Single Step</button>
+					<button onclick="StepOver()">Step Over</button>
+					<button onclick="Run()">Run</button>
+				</div>
+				<div>
+					<input type="text" id="Breakpoint" maxlength="4" size="4"></input>
+					<button onclick="BreakpointToggle()">Toggle Breakpoint</button>
+				</div>
+				<input type="text" id="StepCount" maxlength="4" size="4" value="1" style="display:inline"></input>
+			</div>
+		
+			<div style="display:block">
+				<div>
+					<textarea id="DisplayPIC" rows="10" cols="30" disabled="true"></textarea>
+				</div>
+				<div>
+					<select id="PICSel">
+						<option value="0">0</option>
+						<option value="1">1</option>
+					</select>
+				</div>
+			</div>
+			
+			<div style="display:block">
+				<div>
+					<textarea id="DisplayPIT" rows="10" cols="30" disabled="true"></textarea>
+				</div>
+				<div>
+					<select id="PITSel">
+						<option value="0">0</option>
+						<option value="1">1</option>
+					</select>
+				</div>
+			</div>
+		</div>
+		
+		<div style="float:right">
+			<div style="display:block">
+				<div>
+					<textarea id="DisplayUART" rows="24" cols="80" disabled="true"></textarea>
+				</div>
+				<div>
+					<input type="text" id="UARTInput" size="75"></input>
+					<button onclick="UARTSend()">Send</button>					
+				</div>
+				<div>
+					Baud
+					<select id="UARTBaud">
+						<option value="0">1200</option>
+						<option value="1">2400</option>
+						<option value="2">4800</option>
+						<option value="3">9600</option>
+						<option value="4">19200</option>
+						<option value="5">38400</option>
+						<option value="6">57600</option>
+						<option value="7">115200</option>
+						<option value="8">230400</option>
+						<option value="9">460800</option>
+						<option value="10">921600</option>
+					</select>
+					Port<input type="text" id="UARTPort" size="2"></input>
+					IRQ
+					<select id="UARTIRQNumber">
+						<option value="0">0</option>
+						<option value="1">1</option>
+						<option value="2">2</option>
+						<option value="3">3</option>
+						<option value="4">4</option>
+						<option value="5">5</option>
+						<option value="6">6</option>
+						<option value="7">7</option>
+						<option value="8">8</option>
+						<option value="9">9</option>
+						<option value="10">10</option>
+						<option value="11">11</option>
+						<option value="12">12</option>
+						<option value="13">13</option>
+						<option value="14">14</option>
+						<option value="15">15</option>
+					</select>
+					<input type="checkbox" id="UARTLineMode">Line Mode</input>
+					<input type="checkbox" id="UARTSendCR" checked="true">Send CR</input>
+					<input type="checkbox" id="UARTSendLF" checked="true">Send LF</input>
+					<select id="UARTConnection">
+						<option value="0">Terminal</option>
+						<option value="1">Serial</option>
+						<option value="2">Bluetooth</option>
+						<option value="3">Net</option>
+					</select>
+				</div>
+			</div>
 		</div>
 		
 		<div>
-			<textarea id="DisplayBAR" rows="10" cols="35" disabled="true"></textarea>
+			<div>
+				<div>
+					<input id="inp" type="file" onchange="readFile(event)" accept=".hex"></input>
+				</div>
+				<div>
+					Page<input type="text" id="LoadPage" maxlength="2" size="2" value="00"></input>
+					Offset<input type="text" id="LoadOffset" maxlength="4" size="4" value="0000"></input>
+					<input type="checkbox" id="LoadToggle">Load to RAM
+				</div>
+			</div>
+			<div>
+				<div style="display:block">
+					<textarea id="DisplayMemoryA" rows="17" cols="55" disabled="true"></textarea>
+					<div style="display:block">
+						<input type="text" id="MemoryStartA" maxlength="4" size="4" value="0000"></input>
+						<input type="checkbox" id="MemoryToggleA" checked="true" onclick="ToggleMemoryA()">Show Flash
+						<button onclick="ClearMemoryA()">Clear</button>
+					</div>
+				</div>
+				<div style="display:block">
+					<textarea id="DisplayMemoryB" rows="17" cols="55" disabled="true"></textarea>
+					<div style="display:block">
+						<input type="text" id="MemoryStartB" maxlength="4" size="4" value="0000"></input>
+						<input type="checkbox" id="MemoryToggleB" onclick="ToggleMemoryB()">Show Flash
+						<button onclick="ClearMemoryB()">Clear</button>
+					</div>
+				</div>
+			</div>
+			
+			<div>
+				<textarea id="DisplayBAR" rows="10" cols="35" disabled="true"></textarea>
+				<div>
+					<select id="BARReg">
+						<option value="0">0</option>
+						<option value="1">1</option>
+						<option value="2">2</option>
+						<option value="3">3</option>
+						<option value="4">4</option>
+						<option value="5">5</option>
+						<option value="6">6</option>
+						<option value="7">7</option>
+					</select>
+					<input type="text" id="BARPage" maxlength="2" size="2" value="00"></input>
+					<input type="checkbox" id="BARRAMR">RAMRDIS</input>
+					<input type="checkbox" id="BARROMW">ROMWDIS</input>
+					<button onclick="SetBAR()">Set</button>
+				</div>
+			</div>
 		</div>
+		
 		<div id="hexfile"></div>
 	</body>
 </html>
