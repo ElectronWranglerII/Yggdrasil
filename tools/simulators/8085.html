@@ -1,0 +1,3057 @@
+<!DOCTYPE html>
+<!-- ;* Yggdrasil (TM) Core Operating System (MCS-80/85): System Emulation Tool
+;* Copyright (C) DeRemee Systems, IXE Electronics LLC
+;* Portions copyright IXE Electronics LLC, Republic Robotics,
+;* FemtoLaunch, FemtoSat, FemtoTrack, Weland
+;* This work is made available under the Creative Commons
+;* Attribution-NonCommercial-ShareAlike 4.0 International License.
+;* To view a copy of this license, visit
+;* http://creativecommons.org/licenses/by-nc-sa/4.0/. -->
+<html>
+	<head>
+		<title>
+			8085 Assembler & System Emulator
+		</title>
+		<meta http-equiv="content-type" content="text/html; charset=UTF-8" >
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<script src="http://www.deremee.42web.io/js/simulators/components/bar.js"></script>
+		<script src="http://www.deremee.42web.io/js/simulators/components/genericlcd.js"></script>
+	</head> 
+	<body onload="Initialize()">
+		<script>			
+			class DefaultPort{
+				constructor(){
+				
+				}
+				Read(){
+					return 0;
+				}
+				Write(Value){
+					
+				}
+			}
+			
+			class GenericDisplayCommand{
+				constructor(){
+					this._ReadAddress = 0;
+					this._ReadAddressByte = 0;
+					this._ReadAddressH = 0;
+					this._ReadAddressL = 0;
+					this._ReadAddressM = 0;
+					this._WriteAddress = 0;
+					this._WriteAddressByte = 0;
+					this._WriteAddressH = 0;
+					this._WriteAddressL = 0;
+					this._DataObject = "";
+					this._Mode = 0;
+				}
+				DataPort(Obj){
+					this._DataObject = Obj;
+				}
+				Read(){
+				
+				}
+				Reset(){
+					this._ReadAddress = 0;
+					this._ReadAddressByte = 0;
+					this._ReadAddressH = 0;
+					this._ReadAddressL = 0;
+					this._ReadAddressM = 0;
+					this._WriteAddress = 0;
+					this._WriteAddressByte = 0;
+					this._WriteAddressH = 0;
+					this._WriteAddressL = 0;
+					this._Mode = 0;
+				}
+				Write(Command){
+					switch(this._Mode){
+						//Command
+						case 0:
+							switch((Command & 255) >>> 0){
+								//NOP
+								case 0:
+									break;
+								//Reset
+								case 1:
+									this.Reset();
+									break;
+								//Set Write Address
+								case 2:
+									this._Mode = 2;
+									break;
+								//Set Read Address
+								case 3:
+									this._Mode = 3;
+									break;
+								default:
+									break;
+							}
+							break;
+						//Set WriteAddress
+						case 2:
+							switch(this._WriteAddressByte){
+								case 0:
+									this._WriteAddressL = Command;
+									this._WriteAddressByte = 1;
+									break;
+								case 1:
+									this._WriteAddressM = Command;
+									this._WriteAddressByte = 2;
+									break;
+								case 2:
+									this._WriteAddressH = Command;
+									this._WriteAddress = this._WriteAddressH * 65536 + this._WriteAddressM * 256 + this._WriteAddressL;
+									this._WriteAddressByte = 0;
+									this._DataObject.WriteAddress(this._WriteAddress);
+									this._Mode = 0;
+									break;
+							}
+							break;
+						//Set ReadAddress
+						case 3:
+							if(this._ReadAddressByte == 0){
+								this._ReadAddressL = Command;
+								this._ReadAddressByte = 1;
+							}else{
+								this._ReadAddressH = Command;
+								this._ReadAddress = this._ReadAddressH * 256 + this._ReadAddressL;
+								this._DataObject.ReadAddress(this._ReadAddress);
+								this._ReadAddressByte = 0;
+							}
+							this._Mode = 0;
+							break;
+						default:
+							break;
+					}
+				}
+			}
+			class GenericDisplayData{
+				constructor(){
+					this._ReadAddress = 0;
+					this._Refresh = true;
+					this._WriteAddress = 0;
+					this._Data = Array(921600).fill(0);
+					this._DisplayPage = 0;
+					this._DisplayArea = document.getElementById("LCDCanvas").getContext("2d");
+				}
+				DisplayPage(Page){
+					this._DisplayPage = (Page & 1) >>> 0;
+				}
+				Draw(){
+					this._DisplayArea.fillStyle = "#A0C0B0";
+					this._DisplayArea.fillRect(0, 0, this._DisplayArea.canvas.width, this._DisplayArea.canvas.height);
+					let AddressHigh = this._DisplayPage * 2048;
+					let Column = 0;
+					let Row = 0;
+					let Bit = 1;
+					for(let i = 0; i < 1024; i++){
+						this.DrawPixel(Column, Row, this._Data[AddressHigh + i] & Bit);
+						Bit = Bit << 1;
+						Row = Row + 1;
+						this.DrawPixel(Column, Row, this._Data[AddressHigh + i] & Bit);
+						Bit = Bit << 1;
+						Row = Row + 1;
+						this.DrawPixel(Column, Row, this._Data[AddressHigh + i] & Bit);
+						Bit = Bit << 1;
+						Row = Row + 1;
+						this.DrawPixel(Column, Row, this._Data[AddressHigh + i] & Bit);
+						Bit = Bit << 1;
+						Row = Row + 1;
+						this.DrawPixel(Column, Row, this._Data[AddressHigh + i] & Bit);
+						Bit = Bit << 1;
+						Row = Row + 1;
+						this.DrawPixel(Column, Row, this._Data[AddressHigh + i] & Bit);
+						Bit = Bit << 1;
+						Row = Row + 1;
+						this.DrawPixel(Column, Row, this._Data[AddressHigh + i] & Bit);
+						Bit = Bit << 1;
+						Row = Row + 1;
+						this.DrawPixel(Column, Row, this._Data[AddressHigh + i] & Bit);
+						Bit = 1;
+						Row = Row + 1;
+						if(Row > 63){
+							Row = 0;
+							Column = Column + 1;
+						}
+					}
+				}
+				DrawPixel(Column, Row, Value){
+					if(Value == 0){
+						this._DisplayArea.fillStyle = "#A0C0B0";
+					}else{
+						this._DisplayArea.fillStyle = "#304040";
+					}
+					this._DisplayArea.fillRect(Column * 2, Row * 2, 2, 2);
+				}
+				Read(){
+					let Temp = this._ReadAddress;
+					this._ReadAddress = ReadAddress + 1;
+					if((this._ReadAddress & 2048) - (Temp & 2048) != 0){
+						this._ReadAddress = Temp & 2048;
+					}
+					return this._Data[Temp];
+				}
+				ReadAddress(Address){
+					this._ReadAddress = (Address & 2047) >>> 0;
+				}
+				Reset(){
+					this._Data = Array(2048).fill(0);
+					this._DisplayPage = 0;
+					this._ReadAddress = 0;
+					this._WriteAddress = 0;
+				}
+				Write(Value){
+					this._Refresh = true;
+					this._Data[this._WriteAddress] = Value;
+					let Temp = this._WriteAddress;
+					this._WriteAddress = this._WriteAddress + 1;
+					if((this._WriteAddress & 2048) - (Temp & 2048) != 0){
+						this._WriteAddress = Temp & 2048;
+					}
+				}
+				WriteAddress(Address){
+					this._WriteAddress = (Address & 2047) >>> 0;
+				}
+			}
+			
+			class PIC{
+				constructor(){
+					this._ICW = Array(4).fill(0);
+					this._OCW = Array(3).fill(0);
+					this._IRR = 0;
+					this._ISR = 0;
+					this._IMR = 0;
+					this._Cascade = true;
+					this._Interval = 8;
+					this._EdgeTrigger = true;
+					this._VectorLSB = 0;
+					this._VectorMSB = 0;
+					this._SlaveMask = 0;
+					this._SlaveID = 0;
+					this._MCS85Mode = true;
+					this._AutoEOI = false;
+					this._BufferMode = 0;
+					this._SFNM = false;
+					this._SLLevel = 0;
+					this._REOIMode = 0;
+				}
+				Display(){
+					
+				}
+			}
+			
+			class PIT{
+				constructor(){
+					this._Timer = Array(3).fill(0);
+					this._Mode = Array(3).fill(0);
+					this._BCD = Array(3).fill(0);
+					this._Out = Array(3).fill(0);
+				}
+				Read(Port){
+				
+				}
+				Write(Port, Value){
+					
+				}
+			}
+			
+			class PPI8255{
+				constructor(){
+					this._Control = 0;
+					this._Pin = Array(3).fill(Array(8).fill(0));
+					this._Port = Array(3).fill(0);
+					this._Mode = Array(2).fill(0);
+					this._Direction = Array(3).fill(0);
+				}
+				Read(Port){
+					if(Port <=2 && Port >= 0){
+						return	this._Pin[Port][0] +
+								this._Pin[Port][1] << 1 +
+								this._Pin[Port][2] << 2 +
+								this._Pin[Port][3] << 3 +
+								this._Pin[Port][4] << 4 +
+								this._Pin[Port][5] << 5 +
+								this._Pin[Port][6] << 6 +
+								this._Pin[Port][7] << 7;
+					}else{
+						return 0;
+					}
+				}
+				Update(){
+					//Port 0
+					switch(this._Mode[0]){
+						case 0:
+							break;
+						case 1:
+							if(this._Pin[2][6] == 0){
+								
+							}
+							break;
+						case 2:
+							break;
+						default:
+							break;
+					}
+				}
+				Write(Port, Value){
+					Value = (Value & 255) >>> 0;
+					switch(Port){
+						case 0:
+							switch(this._Mode[0]){
+								case 0:
+									if(this._Direction[0] == 0){
+										this._Port = Value;
+									}
+									break;
+								case 1:
+									if(this._Direction[0] == 0){
+										this._Port[0] = Value;
+										if(this._Pin[2][7] == 1){
+											this._Port[2] = this._Port[2] & 127;
+										}else{
+											this._Port[2] = this._Port[2] | 128;
+										}
+									}
+									break;
+								case 2:
+									break;
+								default:
+									break;
+							}
+							break;
+						case 1:
+							
+							break;
+						case 2:
+							
+							break;
+						case 3:
+							if(Value & 128 == 0){
+								
+							}else{
+							
+							}
+							break;
+						default:
+							break;
+					}
+				}
+			}
+			
+			class GenericTerminal{
+				constructor(){
+					this._Col = 0;
+					this._Cols = 80;
+					this._Connection = "";
+					this._DisplayArea = "";
+					this._Keyboard = "";
+					this.Row = 0;
+					this._Rows = 24;
+				}
+				Connect(Device){
+					this._Connection = Device;
+				}
+				Input(HTMLObject){
+					this._Keyboard = HTMLObject;
+				}
+				Read(){
+				
+				}
+				Display(HTMLObject){
+					this._DisplayArea = HTMLObject;
+				}
+				Write(Value){
+					this._DisplayArea = this._DisplayArea.value + Value;
+				}
+			}
+			
+			class GenericUART{
+				constructor(){
+					this._BaudRate = 0;
+					this._ClockSpeed = 0;
+					this._Connection = "";
+					this._RXBuffer = 0;
+					this._RXFull = 0;
+					this._RXInput = 0;
+					this._RXInt = 0;
+					this._RXIntEnable = 0;
+					this._RXTick = 0;
+					this._TickCount = 0;
+					this._TXBuffer = 0;
+					this._TXEmpty = 0;
+					this._TXInt = 0;
+					this._TXIntEnable = 0;
+					this._TXOutput = 0;
+					this._TXTick = 0;
+					this._IRQLine = 0;
+				}
+				Baud(Value){
+					this._BaudRate = Value;
+				}
+				Connect(Device){
+					this._Connection = Device;
+				}
+				Read(){
+					this._RXEmpty = 1;
+					return this._RXBuffer;
+				}
+				Tick(Value){
+					//Advances the UART the specified number of clock ticks
+					this._TickCount = this._TickCount + Value;
+					if(this._TickCount >= this._RXTick){
+						this._RXInput = this._Connection.Read();
+						this._RXFull = 1;
+						if(this._RXIntEnable = 1){
+							this._RXInt = 1;
+						}
+					}
+					if(this._TickCount >= this._TXTick){
+						this._Connection.Write(this._TXBuffer);
+						this._TXEmpty = 1;
+						if(this._TXIntEnable == 1){
+							this._TXInt = 1;
+						}
+					}
+					if(this._RXInt == 1 || this._TXInt == 1){
+						this._IRQLine = 1;
+					}
+				}
+				Clock(Value){
+					this._ClockSpeed = Value;
+				}
+				Write(Value){
+					if(this._TXEmpty == 0){
+						this._TXEmpty = 0;
+						this._TXBuffer = (Value & 255) >>> 0;
+						this._TXTick = this._TickCount + this._ClockSpeed / this._BaudRate;
+					}
+				}
+			}
+		
+			var A = 0;
+			var B = 0;
+			var C = 0;
+			var D = 0;
+			var E = 0;
+			var H = 0;
+			var L = 0;
+			var PC = 0;
+			var SP = 0;
+			var FLAGS;
+			var ZF = 0;
+			var SF = 0;
+			var PF = 0;
+			var AF = 0;
+			var CF = 0;
+			
+			var RAMASpace = 1;
+			var RAMBSpace = 0;
+			var Page = 0;
+		
+			var ClockSpeed = 5000000;
+			var Delta = 1 / ClockSpeed;
+			var ClockLevel = 0;
+			var ElapsedTime = 0;
+			var Loops = 0;
+			
+			var RAMSize = 1048576;
+			var RAM = Array(RAMSize).fill(0);
+			var FlashSize = 1048576;
+			var FLASH = Array(FlashSize).fill(255);
+			var PORT = Array(256).fill(0);
+			var BARCount = 8;
+			var BAR = [];
+			var UART;
+			var LCDCommand = "";
+			var LCDData = "";
+			var Halted = false;
+			var RefreshTask;
+			var Breakpoint = [];
+			var	Steppoint = [];			
+		
+			function Initialize(){
+				for(let i = 0; i < 256; i++){
+					PORT[i] = new DefaultPort();
+				}
+				for(let i = 0; i < BARCount; i++){
+					BAR.push(new BlockAddressRegister());
+					PORT[4 + i] = BAR[i];
+				}
+				UART = new GenericUART();
+				Terminal = new GenericTerminal();
+				UART.Connect = Terminal;
+				Terminal.Connect = UART;
+				Terminal.Display = document.getElementById("DisplayUART");
+				//PORT[38] = UART;
+				LCDData = new GenericLCDData();
+				LCDCommand = new GenericLCDCommand();
+				LCDCommand.DataPort(LCDData);
+				PORT[38] = LCDCommand;
+				PORT[39] = LCDData;
+				/*
+				for(let i = 0; i < 1024; i++){
+					PORT[39].Write(1);
+				}
+				*/
+				/*
+				PORT[38].Write(1);
+				PORT[38].Write(2);
+				PORT[38].Write(240);
+				PORT[38].Write(3);
+				PORT[39].Write(255);
+				LCDData.Draw();
+				*/
+				PORT[38].Reset();
+				Reset();
+			}
+			
+			function openFile(){
+				document.getElementById('inp').click();
+			}
+			
+			function readFile(e){
+				var file = e.target.files[0];
+				if (!file) return;
+				var reader = new FileReader();
+				reader.onload = function(e){
+					document.getElementById('hexfile').innerHTML = e.target.result;
+					Decode();
+					Reset();
+				}
+				reader.readAsText(file);
+			}
+			
+			function Decode(){
+				var Buffer = "";
+				var Line = [];
+				var FileData = document.getElementById('hexfile').innerHTML;
+				document.getElementById('hexfile').innerHTML = "";
+				for(let i = 0; i < FileData.length; i++){
+					if(FileData[i] == '\n'){
+						Line.push(Buffer);
+						Buffer = "";
+					}else{
+						Buffer += FileData[i];
+					}
+				}
+				for(let i = 0; i < Line.length; i++){
+					var ByteCount;
+					let Address;
+					let Offset = parseInt(document.getElementById("LoadOffset").value, 16);
+					Buffer = Line[i];
+					if(document.getElementById("LoadToggle").checked == true){
+						if(Buffer.substring(0, 1) == ":"){
+							ByteCount = parseInt(Buffer.substring(1, 3), 16);
+							Address = parseInt(Buffer.substring(3, 7), 16);
+							Type = parseInt(Buffer.substring(7, 9), 16);
+							if(Type == 0){
+								for(let j = 0; j < ByteCount * 2; j = j + 2){
+									RAM[Address + Offset] = parseInt(Buffer.substring(9 + j, 9 + j + 2), 16);
+									Address = Address + 1;
+								}
+							}else{
+								if(parseInt(Buffer.substring(9, 11), 16) != 255){
+									alert("Error: Incorrect end of file");
+								}
+							}
+						}
+					}else{
+						if(Buffer.substring(0, 1) == ":"){
+							ByteCount = parseInt(Buffer.substring(1, 3), 16);
+							Address = parseInt(Buffer.substring(3, 7), 16);
+							Type = parseInt(Buffer.substring(7, 9), 16);
+							if(Type == 0){
+								for(let j = 0; j < ByteCount * 2; j = j + 2){
+									FLASH[Address + Offset] = parseInt(Buffer.substring(9 + j, 9 + j + 2), 16);
+									Address = Address + 1;
+								}
+							}else{
+								if(parseInt(Buffer.substring(9, 11), 16) != 255){
+									alert("Error: Incorrect end of file");
+								}
+							}
+						}
+					}
+				}
+			}
+		</script>
+		<script>
+			//Internal state
+			
+			//Instruction Byte Counts
+			InstructionLength = [
+				1, 3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1,
+				1, 3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1,
+				1, 3, 3, 1, 1, 1, 2, 1, 1, 1, 3, 1, 1, 1, 2, 1,
+				1, 3, 3, 1, 1, 1, 2, 1, 1, 1, 3, 1, 1, 1, 2, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+				1, 1, 3, 3, 3, 1, 2, 1, 1, 1, 3, 1, 3, 3, 2, 1,
+				1, 1, 3, 2, 3, 1, 2, 1, 1, 1, 3, 2, 3, 1, 2, 1,
+				1, 1, 3, 1, 3, 1, 2, 1, 1, 1, 3, 1, 3, 1, 2, 1,
+				1, 1, 3, 1, 3, 1, 2, 1, 1, 1, 3, 1, 3, 1, 2, 1
+			];
+			
+			//Instruction Mnemonics
+			Mnemonic = [
+				"NOP",
+				"LXI B,w",
+				"STAXb",
+				"INX B",
+				"INR B",
+				"DCR B",
+				"MVI B,b",
+				"RLC",
+				"[DSUB]",
+				"DAD B",
+				"LDAX B",
+				"DCX B",
+				"INR C",
+				"DCR C",
+				"MVI C,b",
+				"RRC",
+				"[AHRL]",
+				"LXI D,w",
+				"STAX D",
+				"INX D",
+				"INR D",
+				"DCR D",
+				"MVI D,b",
+				"RAL",
+				"[RDEL]",
+				"DAD D",
+				"LDAX D",
+				"DCX D",
+				"INR E",
+				"DCR E",
+				"MVI E,b",
+				"RAR",
+				"RIM",
+				"LXI H,w",
+				"SHLDw",
+				"INX H",
+				"INR H",
+				"DCR H",
+				"MVI H,b",
+				"DAA",
+				"[LDHI]",
+				"DAD H",
+				"LHLDw",
+				"DCX H",
+				"INR L",
+				"DCR L",
+				"MVI L,b",
+				"CMA",
+				"SIM",
+				"LXI SP,w",
+				"STAw",
+				"INX SP",
+				"INR M",
+				"DCR M",
+				"MVI M,b",
+				"STC",
+				"[LDSI]",
+				"DAD SP",
+				"LDAw",
+				"DCX SP",
+				"INR A",
+				"DCR A",
+				"MVI A,b",
+				"CMC",
+				"MOV B,b",
+				"MOV B, C",
+				"MOV B, D",
+				"MOV B, E",
+				"MOV B, H",
+				"MOV B, L",
+				"MOV B, M",
+				"MOV B, A",
+				"MOV C,b",
+				"MOV C, C",
+				"MOV C, D",
+				"MOV C, E",
+				"MOV C, H",
+				"MOV C, L",
+				"MOV C, M",
+				"MOV C, A",
+				"MOV D,b",
+				"MOV D, C",
+				"MOV D, D",
+				"MOV D, E",
+				"MOV D, H",
+				"MOV D, L",
+				"MOV D, M",
+				"MOV D, A",
+				"MOV E,b",
+				"MOV E, C",
+				"MOV E, D",
+				"MOV E, E",
+				"MOV E, H",
+				"MOV E, L",
+				"MOV E, M",
+				"MOV E, A",
+				"MOV H,b",
+				"MOV H, C",
+				"MOV H, D",
+				"MOV H, E",
+				"MOV H, H",
+				"MOV H, L",
+				"MOV H, M",
+				"MOV H, A",
+				"MOV L,b",
+				"MOV L, C",
+				"MOV L, D",
+				"MOV L, E",
+				"MOV L, H",
+				"MOV L, L",
+				"MOV L, M",
+				"MOV L, A",
+				"MOV M,b",
+				"MOV M, C",
+				"MOV M, D",
+				"MOV M, E",
+				"MOV M, H",
+				"MOV M, L",
+				"HLT",
+				"MOV M, A",
+				"MOV A, B",
+				"MOV A, C",
+				"MOV A, D",
+				"MOV A, E",
+				"MOV A, H",
+				"MOV A, L",
+				"MOV A, M",
+				"MOV A, A",
+				"ADD B",
+				"ADD C",
+				"ADD D",
+				"ADD E",
+				"ADD H",
+				"ADD L",
+				"ADD M",
+				"ADD A",
+				"ADC B",
+				"ADC C",
+				"ADC D",
+				"ADC E",
+				"ADC H",
+				"ADC L",
+				"ADC M",
+				"ADC A",
+				"SUB B",
+				"SUB C",
+				"SUB D",
+				"SUB E",
+				"SUB H",
+				"SUB L",
+				"SUB M",
+				"SUB A",
+				"SBC B",
+				"SBC C",
+				"SBC D",
+				"SBC E",
+				"SBC H",
+				"SBC L",
+				"SBC M",
+				"SBC A",
+				"ANA B",
+				"ANA C",
+				"ANA D",
+				"ANA E",
+				"ANA H",
+				"ANA L",
+				"ANA M",
+				"ANA A",
+				"XRA B",
+				"XRA C",
+				"XRA D",
+				"XRA E",
+				"XRA H",
+				"XRA L",
+				"XRA M",
+				"XRA A",
+				"ORA B",
+				"ORA C",
+				"ORA D",
+				"ORA E",
+				"ORA H",
+				"ORA L",
+				"ORA M",
+				"ORA A",
+				"CMP B",
+				"CMP C",
+				"CMP D",
+				"CMP E",
+				"CMP H",
+				"CMP L",
+				"CMP M",
+				"CMP A",
+				"RNZ",
+				"POP B",
+				"JNZw",
+				"JMPw",
+				"CNZw",
+				"PUSH B",
+				"ADIb",
+				"RST 0",
+				"RZ",
+				"RET",
+				"JZw",
+				"[RSTV]",
+				"CZw",
+				"CALLw",
+				"ACIb",
+				"RST 1",
+				"RNC",
+				"POP D",
+				"JNCw",
+				"OUTb",
+				"CNCw",
+				"PUSH D",
+				"SUIb",
+				"RST 2",
+				"RC",
+				"[SHLX]",
+				"JCw",
+				"INb",
+				"CCw",
+				"[JNUI]",
+				"SBIb",
+				"RST 3",
+				"RPO",
+				"POP H",
+				"JPOw",
+				"XTHL",
+				"CPOw",
+				"PUSH H",
+				"ANIb",
+				"RST 4",
+				"RPE",
+				"PCHL",
+				"JPEw",
+				"XCHG",
+				"CPEw",
+				"[LHLX]",
+				"XRIb",
+				"RST 5",
+				"RP",
+				"POP PSW",
+				"JPw",
+				"DI",
+				"CPw",
+				"PUSH PSW",
+				"ORIb",
+				"RST 6",
+				"RM",
+				"SPHL",
+				"JMw",
+				"EI",
+				"CMw",
+				"[JUI]",
+				"CPIb",
+				"RST 7",
+			];
+			
+			//Instruction implementations
+			InstructionMatrix = [
+				//NOP
+				function Inst00(){
+					PC++;
+				},
+				//LXI B, nnnn
+				function Inst01(){
+					PC++;
+					C = MemoryRead(PC);
+					PC++;
+					B = MemoryRead(PC);
+					PC++;
+				},
+				//STAX B
+				function Inst02(){
+					MemoryWrite(B * 256 + C, A);
+					PC++;
+				},
+				//INX B
+				function Inst03(){
+					C++;
+					if(C > 255){
+						C = 0;
+						B++;
+						if(B > 255){
+							B = 0;
+						}
+					}
+					PC++;
+				},
+				//INR B
+				function Inst04(){
+					B++;
+					if(B > 255){
+						B = 0;
+					}
+					UpdateFlagsID(B);
+					PC++;
+				},
+				//DCR B
+				function Inst05(){
+					B--;
+					if(B < 0){
+						B = 255;
+					}
+					UpdateFlagsID(B);
+					PC++;
+				},
+				//MVI B, nn
+				function Inst06(){
+					PC++;
+					B = MemoryRead(PC);
+					PC++;
+				},
+				//RLC
+				function Inst07(){
+					Temp = A & 128;
+					A = (A * 2 + Temp) & 255 >>> 0;
+					CF = Temp;
+					PC++;
+				},
+				//DSUB
+				function Inst08(){
+					PC++;
+				},
+				//DAD B
+				function Inst09(){
+					Temp = (H * 256 + L) + (B * 256 + C);
+					if(Temp > 65535){
+						Temp = Temp - 65536;
+						CF = 1;
+					}else{
+						CF = 0;
+					}
+					H = Math.floor(Temp / 256);
+					L = Temp % 256;
+					PC++;
+				},
+				//LDAX B
+				function Inst0A(){
+					A = MemoryRead(B * 256 + C);
+					PC++;
+				},
+				//DCX B
+				function Inst0B(){
+					C--;
+					if(C < 0){
+						C = 255;
+						B--;
+						if(B < 0){
+							B = 255;
+						}
+					}
+					PC++;
+				},
+				//INR C
+				function Inst0C(){
+					C++;
+					if(C > 255){
+						C = 0;
+					}
+					UpdateFlagsID(C);
+					PC++;
+				},
+				//DCR C
+				function Inst0D(){
+					C--;
+					if(C < 0){
+						C = 255;
+					}
+					UpdateFlagsID(C);
+					PC++;
+				},
+				//MVI C, nn
+				function Inst0E(){
+					PC++;
+					C = MemoryRead(PC);
+					PC++;
+				},
+				//RRC
+				function Inst0F(){
+					Temp = A & 1;
+					A = (A >>> 1 + Temp) & 255 >>> 0;
+					CF = Temp;
+					PC++;
+				},
+				//AHRL
+				function Inst10(){
+					PC++;
+				},
+				//LXI D, nnnn
+				function Inst11(){
+					PC++;
+					E = MemoryRead(PC);
+					PC++;
+					D = MemoryRead(PC);
+					PC++;
+				},
+				//STAX D
+				function Inst12(){
+					MemoryWrite(D * 256 + E, A);
+					PC++;
+				},
+				//INX D
+				function Inst13(){
+					E++;
+					if(E > 255){
+						E = 0;
+						D++;
+						if(D > 255){
+							D = 0;
+						}
+					}
+					PC++;
+				},
+				//INR D
+				function Inst14(){
+					D++;
+					if(D > 255){
+						D = 0;
+					}
+					UpdateFlagsID(D);
+					PC++;
+				},
+				//DCR D
+				function Inst15(){
+					D--;
+					if(D < 0){
+						D = 255;
+					}
+					UpdateFlagsID(D);
+					PC++;
+				},
+				//MVI D, nn
+				function Inst16(){
+					PC++;
+					D = MemoryRead(PC);
+					PC++;
+				},
+				//RAL
+				function Inst17(){
+					Temp = A & 128;
+					A = (A * 2 + CF) & 255 >>> 0;
+					CF = Temp;
+					PC++;
+				},
+				//RDEL
+				function Inst18(){
+					PC++;
+				},
+				//DAD D
+				function Inst19(){
+					Temp = (H * 256 + L) + (D * 256 + E);
+					if(Temp > 65535){
+						Temp = Temp - 65536;
+						CF = 1;
+					}else{
+						CF = 0;
+					}
+					H = Math.floor(Temp / 256);
+					L = Temp % 256;
+					PC++;
+				},
+				//LDAX D
+				function Inst1A(){
+					A = MemoryRead(D * 256 + E);
+					PC++;
+				},
+				//DCX D
+				function Inst1B(){
+					E--;
+					if(E < 0){
+						E = 255;
+						D--;
+						if(D < 0){
+							D = 255;
+						}
+					}
+					PC++;
+				},
+				//INR E
+				function Inst1C(){
+					E++;
+					if(E > 255){
+						E = 0;
+					}
+					UpdateFlagsID(E);
+					PC++;
+				},
+				//DCR E
+				function Inst1D(){
+					E--;
+					if(E < 0){
+						E = 255;
+					}
+					UpdateFlagsID(E);
+					PC++;
+				},
+				//MVI E, nn
+				function Inst1E(){
+					PC++;
+					E = MemoryRead(PC);
+					PC++;
+				},
+				//RAR
+				function Inst1F(){
+					Temp = A & 1;
+					A = (A >>> 1 + CF) & 255 >>> 0;
+					CF = Temp;
+					PC++;
+				},
+				//RIM
+				function Inst20(){
+					PC++;
+				},
+				//LXI H, nnnn
+				function Inst21(){
+					PC++;
+					L = MemoryRead(PC);
+					PC++;
+					H = MemoryRead(PC);
+					PC++;
+				},
+				//SHLD
+				function Inst22(){
+					MemoryWrite(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1), L);
+					MemoryWrite(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1) + 1, H);
+					PC = PC + 3;
+				},
+				//INX H
+				function Inst23(){
+					L++;
+					if(L > 255){
+						L = 0;
+						H++;
+						if(H > 255){
+							H = 0;
+						}
+					}
+					PC++;
+				},
+				//INR H
+				function Inst24(){
+					H++;
+					if(H > 255){
+						H = 0;
+					}
+					UpdateFlagsID(H);
+					PC++;
+				},
+				//DCR H
+				function Inst25(){
+					H--;
+					if(H < 0){
+						H = 255;
+					}
+					UpdateFlagsID(H);
+					PC++;
+				},
+				//MVI H, nn
+				function Inst26(){
+					PC++;
+					H = MemoryRead(PC);
+					PC++;
+				},
+				//DAA
+				function Inst27(){
+					PC++;
+				},
+				//LDHI
+				function Inst28(){
+					PC++;
+				},
+				//DAD H
+				function Inst29(){
+					Temp = (H * 256 + L) + (H * 256 + L);
+					if(Temp > 65535){
+						Temp = Temp - 65536;
+						CF = 1;
+					}else{
+						CF = 0;
+					}
+					H = Math.floor(Temp / 256);
+					L = Temp % 256;
+					PC++;
+				},
+				//LHLD
+				function Inst2A(){
+					L = MemoryRead(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1));
+					H = MemoryRead(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1) + 1);
+					PC = PC + 3;
+				},
+				//DCX H
+				function Inst2B(){
+					L--;
+					if(L < 0){
+						L = 255;
+						H--;
+						if(H < 0){
+							H = 255;
+						}
+					}
+					PC++;
+				},
+				//INR L
+				function Inst2C(){
+					L++;
+					if(L > 255){
+						L = 0;
+					}
+					UpdateFlagsID(L);
+					PC++;
+				},
+				//DCR L
+				function Inst2D(){
+					L--;
+					if(L < 0){
+						L = 255;
+					}
+					UpdateFlagsID(L);
+					PC++;
+				},
+				//MVI L, nn
+				function Inst2E(){
+					PC++;
+					L = MemoryRead(PC);
+					PC++;
+				},
+				//CMA
+				function Inst2F(){
+					A = (255 - A) & 255;
+					PC++;
+				},
+				//SIM
+				function Inst30(){
+					PC++;
+				},
+				//LXI SP, nnnn
+				function Inst31(){
+					SP = MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1);
+					PC = PC + 3;
+				},
+				//STA nnnn
+				function Inst32(){
+					MemoryWrite(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1), A);
+					PC = PC + 3;
+				},
+				//INX SP
+				function Inst33(){
+					SP++
+					if(SP > 65535){
+						SP = 0;
+					}
+					PC++;
+				},
+				//INR M
+				function Inst34(){
+					MemoryWrite(MemoryRead(H * 256 + L) + 1);
+					UpdateFlagsID(MemoryRead(H * 256 + L));
+					PC++;
+				},
+				//DCR M
+				function Inst35(){
+					MemoryWrite(MemoryRead(H * 256 + L) - 1);
+					UpdateFlagsID(MemoryRead(H * 256 + L));
+					PC++;
+				},
+				//MVI M, nn
+				function Inst36(){
+					PC++;
+					MemoryWrite(H * 256 + L, MemoryRead(PC));
+					PC++;
+				},
+				//STC
+				function Inst37(){
+					CF = 1;
+					PC++;
+				},
+				//LDSI
+				function Inst38(){
+					PC++;
+				},
+				//DAD SP
+				function Inst39(){
+					Temp = (H * 256 + L) + (SP);
+					if(Temp > 65535){
+						Temp = Temp - 65536;
+						CF = 1;
+					}else{
+						CF = 0;
+					}
+					H = Math.floor(Temp / 256);
+					L = Temp % 256;
+					PC++;
+				},
+				//LDA nnnn
+				function Inst3A(){
+					A = MemoryRead(MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1), A);
+					PC = PC + 3;
+				},
+				//DCX SP
+				function Inst3B(){
+					SP--;
+					if(SP < 0){
+						SP = 65535;
+					}
+					PC++;
+				},
+				//INR A
+				function Inst3C(){
+					A++;
+					if(A > 255){
+						A = 0;
+					}
+					UpdateFlagsID(A);
+					PC++;
+				},
+				//DCR A
+				function Inst3D(){
+					A--;
+					if(A < 0){
+						A = 255;
+					}
+					UpdateFlagsID(A);
+					PC++;
+				},
+				//MVI A, nn
+				function Inst3E(){
+					PC++;
+					A = MemoryRead(PC);
+					PC++;
+				},
+				//CMC
+				function Inst3F(){
+					CF = CF ^ 1;
+					PC++;
+				},
+				//MOV B, B
+				function Inst40(){
+					B = B;
+					PC++;
+				},
+				//MOV B, C
+				function Inst41(){
+					B = C;
+					PC++;
+				},
+				//MOV B, D
+				function Inst42(){
+					B = D;
+					PC++;
+				},
+				//MOV B, E
+				function Inst43(){
+					B = E;
+					PC++;
+				},
+				//MOV B, H
+				function Inst44(){
+					B = H;
+					PC++;
+				},
+				//MOV B, L
+				function Inst45(){
+					B = L;
+					PC++;
+				},
+				//MOV B, M
+				function Inst46(){
+					B = MemoryRead(H * 256 + L);
+					PC++;
+				},
+				//MOV B, A
+				function Inst47(){
+					B = A;
+					PC++;
+				},
+				//MOV C, B
+				function Inst40(){
+					C = B;
+					PC++;
+				},
+				//MOV C, C
+				function Inst41(){
+					C = C;
+					PC++;
+				},
+				//MOV C, D
+				function Inst42(){
+					C = D;
+					PC++;
+				},
+				//MOV C, E
+				function Inst43(){
+					C = E;
+					PC++;
+				},
+				//MOV C, H
+				function Inst44(){
+					C = H;
+					PC++;
+				},
+				//MOV C, L
+				function Inst45(){
+					C = L;
+					PC++;
+				},
+				//MOV C, M
+				function Inst46(){
+					C = MemoryRead(H * 256 + L);
+					PC++;
+				},
+				//MOV C, A
+				function Inst47(){
+					C = A;
+					PC++;
+				},
+				//MOV D, B
+				function Inst50(){
+					D = B;
+					PC++;
+				},
+				//MOV D, C
+				function Inst51(){
+					D = C;
+					PC++;
+				},
+				//MOV D, D
+				function Inst52(){
+					D = D;
+					PC++;
+				},
+				//MOV D, E
+				function Inst53(){
+					D = E;
+					PC++;
+				},
+				//MOV D, H
+				function Inst54(){
+					D = H;
+					PC++;
+				},
+				//MOV D, L
+				function Inst55(){
+					D = L;
+					PC++;
+				},
+				//MOV D, M
+				function Inst56(){
+					D = MemoryRead(H * 256 + L);
+					PC++;
+				},
+				//MOV D, A
+				function Inst57(){
+					D = A;
+					PC++;
+				},
+				//MOV E, B
+				function Inst58(){
+					E = B;
+					PC++;
+				},
+				//MOV E, C
+				function Inst59(){
+					E = C;
+					PC++;
+				},
+				//MOV E, D
+				function Inst5A(){
+					E = D;
+					PC++;
+				},
+				//MOV E, E
+				function Inst5B(){
+					E = E;
+					PC++;
+				},
+				//MOV E, H
+				function Inst5C(){
+					E = H;
+					PC++;
+				},
+				//MOV E, L
+				function Inst5D(){
+					E = L;
+					PC++;
+				},
+				//MOV E, M
+				function Inst5E(){
+					E = MemoryRead(H * 256 + L);
+					PC++;
+				},
+				//MOV E, A
+				function Inst5F(){
+					E = A;
+					PC++;
+				},
+				//MOV H, B
+				function Inst60(){
+					H = B;
+					PC++;
+				},
+				//MOV H, C
+				function Inst61(){
+					H = C;
+					PC++;
+				},
+				//MOV H, D
+				function Inst62(){
+					H = D;
+					PC++;
+				},
+				//MOV H, E
+				function Inst63(){
+					H = E;
+					PC++;
+				},
+				//MOV H, H
+				function Inst64(){
+					H = H;
+					PC++;
+				},
+				//MOV H, L
+				function Inst65(){
+					H = L;
+					PC++;
+				},
+				//MOV H, M
+				function Inst66(){
+					H = MemoryRead(H * 256 + L);
+					PC++;
+				},
+				//MOV H, A
+				function Inst67(){
+					H = A;
+					PC++;
+				},
+				//MOV L, B
+				function Inst68(){
+					L = B;
+					PC++;
+				},
+				//MOV L, C
+				function Inst69(){
+					L = C;
+					PC++;
+				},
+				//MOV L, D
+				function Inst6A(){
+					L = D;
+					PC++;
+				},
+				//MOV L, E
+				function Inst6B(){
+					L = E;
+					PC++;
+				},
+				//MOV L, H
+				function Inst6C(){
+					L = H;
+					PC++;
+				},
+				//MOV L, L
+				function Inst6D(){
+					L = L;
+					PC++;
+				},
+				//MOV L, M
+				function Inst6E(){
+					L = MemoryRead(H * 256 + L);
+					PC++;
+				},
+				//MOV L, A
+				function Inst6F(){
+					L = A;
+					PC++;
+				},
+				//MOV M, B
+				function Inst70(){
+					MemoryWrite(H * 256 + L, B);
+					PC++;
+				},
+				//MOV M, C
+				function Inst71(){
+					MemoryWrite(H * 256 + L, C);
+					PC++;
+				},
+				//MOV M, D
+				function Inst72(){
+					MemoryWrite(H * 256 + L, D);
+					PC++;
+				},
+				//MOV M, E
+				function Inst73(){
+					MemoryWrite(H * 256 + L, E);
+					PC++;
+				},
+				//MOV M, H
+				function Inst74(){
+					MemoryWrite(H * 256 + L, H);
+					PC++;
+				},
+				//MOV M, L
+				function Inst75(){
+					MemoryWrite(H * 256 + L, L);
+					PC++;
+				},
+				//HLT
+				function Inst76(){
+					Halted = true;
+				},
+				//MOV M, A
+				function Inst77(){
+					MemoryWrite(H * 256 + L, A);
+					PC++;
+				},
+				//MOV A, B
+				function Inst78(){
+					A = B;
+					PC++;
+				},
+				//MOV A, C
+				function Inst79(){
+					A = C;
+					PC++;
+				},
+				//MOV A, D
+				function Inst7A(){
+					A = D;
+					PC++;
+				},
+				//MOV A, E
+				function Inst7B(){
+					A = E;
+					PC++;
+				},
+				//MOV A, H
+				function Inst7C(){
+					A = H;
+					PC++;
+				},
+				//MOV A, L
+				function Inst7D(){
+					A = L;
+					PC++;
+				},
+				//MOV A, M
+				function Inst7E(){
+					A = MemoryRead(H * 256 + L);
+					PC++;
+				},
+				//MOV A, A
+				function Inst7F(){
+					A = A;
+					PC++;
+				},
+				//ADD B
+				function Inst80(){
+					ADD(B);
+				},
+				//ADD C
+				function Inst81(){
+					ADD(C);
+				},
+				//ADD D
+				function Inst82(){
+					ADD(D);
+				},
+				//ADD E
+				function Inst83(){
+					ADD(E);
+				},
+				//ADD H
+				function Inst84(){
+					ADD(H);
+				},
+				//ADD L
+				function Inst85(){
+					ADD(L);
+				},
+				//ADD M
+				function Inst86(){
+					ADD(MemoryRead(H * 256 + L));
+				},
+				//ADD A
+				function Inst87(){
+					ADD(A);
+				},
+				//ADC B
+				function Inst88(){
+					ADC(B);
+				},
+				//ADC C
+				function Inst89(){
+					ADC(C);
+				},
+				//ADC D
+				function Inst8A(){
+					ADC(D);
+				},
+				//ADC E
+				function Inst8B(){
+					ADC(E);
+				},
+				//ADC H
+				function Inst8C(){
+					ADC(H);
+				},
+				//ADC L
+				function Inst8D(){
+					ADC(L);
+				},
+				//ADC M
+				function Inst8E(){
+					ADC(MemoryRead(H * 256 + L));
+				},
+				//ADC A
+				function Inst8F(){
+					ADC(A);
+				},
+				//SUB B
+				function Inst90(){
+					SUB(B);
+				},
+				//SUB C
+				function Inst91(){
+					SUB(C);
+				},
+				//SUB D
+				function Inst92(){
+					SUB(D);
+				},
+				//SUB E
+				function Inst93(){
+					SUB(E);
+				},
+				//SUB H
+				function Inst94(){
+					SUB(H);
+				},
+				//SUB L
+				function Inst95(){
+					SUB(L);
+				},
+				//SUB M
+				function Inst96(){
+					SUB(MemoryRead(H * 256 + L));
+				},
+				//SUB A
+				function Inst97(){
+					SUB(A);
+				},
+				//SBB B
+				function Inst98(){
+					SBB(B);
+				},
+				//SBB C
+				function Inst99(){
+					SBB(C);
+				},
+				//SBB D
+				function Inst9A(){
+					SBB(D);
+				},
+				//SBB E
+				function Inst9B(){
+					SBB(E);
+				},
+				//SBB H
+				function Inst9C(){
+					SBB(H);
+				},
+				//SBB L
+				function Inst9D(){
+					SBB(L);
+				},
+				//SBB M
+				function Inst9E(){
+					SBB(MemoryRead(H * 256 + L));
+				},
+				//SBB A
+				function Inst9F(){
+					SBB(A);
+				},
+				//ANA B
+				function InstA0(){
+					ANA(B);
+				},
+				//ANA C
+				function InstA1(){
+					ANA(C);
+				},
+				//ANA D
+				function InstA2(){
+					ANA(D);
+				},
+				//ANA E
+				function InstA3(){
+					ANA(E);
+				},
+				//ANA H
+				function InstA4(){
+					ANA(H);
+				},
+				//ANA L
+				function InstA5(){
+					ANA(L);
+				},
+				//ANA M
+				function InstA6(){
+					ANA(MemoryRead(H * 256 + L));
+				},
+				//ANA A
+				function InstA7(){
+					ANA(A);
+				},
+				//XRA B
+				function InstA8(){
+					XRA(B);
+				},
+				//XRA C
+				function InstA9(){
+					XRA(C);
+				},
+				//XRA D
+				function InstAA(){
+					XRA(D);
+				},
+				//XRA E
+				function InstAB(){
+					XRA(E);
+				},
+				//XRA H
+				function InstAC(){
+					XRA(H);
+				},
+				//XRA L
+				function InstAD(){
+					XRA(L);
+				},
+				//XRA M
+				function InstAE(){
+					XRA(MemoryRead(H * 256 + L));
+				},
+				//XRA A
+				function InstAF(){
+					XRA(A);
+				},
+				//ORA B
+				function InstB0(){
+					ORA(B);
+				},
+				//ORA C
+				function InstB1(){
+					ORA(C);
+				},
+				//ORA D
+				function InstB2(){
+					ORA(D);
+				},
+				//ORA E
+				function InstB3(){
+					ORA(E);
+				},
+				//ORA H
+				function InstB4(){
+					ORA(H);
+				},
+				//ORA L
+				function InstB5(){
+					ORA(L);
+				},
+				//ORA M
+				function InstB6(){
+					ORA(MemoryRead(H * 256 + L));
+				},
+				//ORA A
+				function InstB7(){
+					ORA(A);
+				},
+				//CMP B
+				function InstB8(){
+					CMP(B);
+				},
+				//CMP C
+				function InstB9(){
+					CMP(C);
+				},
+				//CMP D
+				function InstBA(){
+					CMP(D);
+				},
+				//CMP E
+				function InstBB(){
+					CMP(E);
+				},
+				//CMP H
+				function InstBC(){
+					CMP(H);
+				},
+				//CMP L
+				function InstBD(){
+					CMP(L);
+				},
+				//CMP M
+				function InstBE(){
+					CMP(MemoryRead(H * 256 + L));
+				},
+				//CMP A
+				function InstBF(){
+					CMP(A);
+				},
+				//RNZ
+				function InstC0(){
+					if(ZF == 0){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//POP B
+				function InstC1(){
+					C = Pop();
+					B = Pop();
+					PC++;
+				},
+				//JNZ nnnn
+				function InstC2(){
+					if(ZF == 0){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//JMP nnnn
+				function InstC3(){
+					PC = MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1);
+				},
+				//CNZ nnnn
+				function InstC4(){
+					if(ZF == 0){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//PUSH B
+				function InstC5(){
+					Push(B);
+					Push(C);
+					PC++;
+				},
+				//ADI nn
+				function InstC6(){
+					PC++;
+					ADD(MemoryRead(PC));
+				},
+				//RST 0
+				function InstC7(){
+					RST(0);
+				},
+				//RZ
+				function InstC8(){
+					if(ZF == 1){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//RET
+				function InstC9(){
+					PC = Pop() + Pop() * 256;
+				},
+				//JZ nnnn
+				function InstCA(){
+					if(ZF == 1){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//RSTV
+				function InstCB(){
+					PC++;
+				},
+				//CZ
+				function InstCC(){
+					if(ZF == 1){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//CALL nnnn
+				function InstCD(){
+					Temp = MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1);
+					PC = PC + 3;
+					Push(PC / 256 >>> 0);
+					Push(PC % 256 >>> 0);
+					PC = Temp;
+				},
+				//ACI nn
+				function InstCE(){
+					PC++;
+					ADC(MemoryRead(PC));
+				},
+				//RST 1
+				function InstCF(){
+					RST(1);
+				},
+				//RNC
+				function InstD0(){
+					if(CF == 0){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//POP D
+				function InstD1(){
+					E = Pop();
+					D = Pop();
+					PC++;
+				},
+				//JNC nnnn
+				function InstD2(){
+					if(CF == 0){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//OUT nn
+				function InstD3(){
+					PC++;
+					PORT[MemoryRead(PC)].Write(A);
+					PC++;
+				},
+				//CNC nnnn
+				function InstD4(){
+					if(CF == 0){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//PUSH D
+				function InstD5(){
+					Push(D);
+					Push(E);
+					PC++;
+				},
+				//SUI nn
+				function InstD6(){
+					PC++;
+					SUB(MemoryRead(PC));
+				},
+				//RST 2
+				function InstD7(){
+					RST(2);
+				},
+				//RC
+				function InstD8(){
+					if(CF == 1){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//SHLX
+				function InstD9(){
+					PC++;
+				},
+				//JC nnnn
+				function InstDA(){
+					if(CF == 1){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//IN nn
+				function InstDB(){
+					PC++;
+					A = PORT[MemoryRead(PC)].Read();
+					PC++;
+				},
+				//CC nnnn
+				function InstDC(){
+					if(CF == 1){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//JNUI
+				function InstDD(){
+					PC++;
+				},
+				//SBI nn
+				function InstDE(){
+					PC++;
+					SBB(MemoryRead(PC));
+				},
+				//RST 3
+				function InstDF(){
+					RST(3);
+				},
+				//RPO
+				function InstE0(){
+					if(PF == 0){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//POP H
+				function InstE1(){
+					L = Pop();
+					H = Pop();
+					PC++;
+				},
+				//JPO nnnn
+				function InstE2(){
+					if(PF == 0){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//XTHL
+				function InstE3(){
+					Temp = MemoryRead(SP);
+					MemoryWrite(SP, L);
+					L = Temp;
+					Temp = MemoryRead(SP - 1);
+					MemoryWrite(SP - 1, H);
+					H = Temp;
+					PC++;
+				},
+				//CPO nnnn
+				function InstE4(){
+					if(PF == 0){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//PUSH H
+				function InstE5(){
+					Push(H);
+					Push(L);
+					PC++;
+				},
+				//ANI nn
+				function InstE6(){
+					PC++;
+					ANA(MemoryRead(PC));
+				},
+				//RST 4
+				function InstE7(){
+					RST(4);
+				},
+				//RPE
+				function InstE8(){
+					if(PF == 1){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//PCHL
+				function InstE9(){
+					PC = H * 256 + L;
+				},
+				//JPE nnnn
+				function InstEA(){
+					if(PF == 1){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//XCHG
+				function InstEB(){
+					Temp = E;
+					E = L;
+					L = Temp;
+					Temp = D;
+					D = H;
+					H = Temp;
+					PC++;
+				},
+				//CPE
+				function InstEC(){
+					if(PF == 1){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//LHLX
+				function InstED(){
+					PC++;
+				},
+				//XRI nn
+				function InstEE(){
+					PC++;
+					XRA(MemoryRead(PC));
+				},
+				//RST 5
+				function InstEF(){
+					RST(5);
+				},
+				//RP
+				function InstF0(){
+					if(SF == 0){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//POP PSW
+				function InstF1(){
+					FLAGS = Pop();
+					A = Pop();
+					PC++;
+				},
+				//JP nnnn
+				function InstF2(){
+					if(SF == 0){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//DI
+				function InstF3(){
+					InterruptsEnabled = false;
+					PC++;
+				},
+				//CP nnnn
+				function InstF4(){
+					if(SF == 0){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//PUSH PSW
+				function InstF5(){
+					Push(A);
+					Push(FLAGS);
+					PC++;
+				},
+				//ORI nn
+				function InstF6(){
+					PC++;
+					ORA(MemoryRead(PC));
+				},
+				//RST 6
+				function InstF7(){
+					RST(6);
+				},
+				//RM
+				function InstF8(){
+					if(SF == 1){
+						InstructionMatrix[201]();;
+					}else{
+						PC++;
+					}
+				},
+				//SPHL
+				function InstF9(){
+					SP = H * 256 + L;
+					PC++;
+				},
+				//JM nnnn
+				function InstFA(){
+					if(SF == 1){
+						InstructionMatrix[195]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//EI
+				function InstFB(){
+					InterruptsEnabled = true;
+					PC++;
+				},
+				//CM
+				function InstFC(){
+					if(SF == 1){
+						InstructionMatrix[205]();;
+					}else{
+						PC = PC + 3;
+					}
+				},
+				//JUI
+				function InstFD(){
+					PC++;
+				},
+				//CPI nn
+				function InstFE(){
+					PC++;
+					CMP(MemoryRead(PC));
+				},
+				//RST 7
+				function InstFF(){
+					RST(7);
+				}
+			];
+			
+			function ADC(Value){
+				A = A + Value + CF;
+				UpdateFlags(A);
+				if(A > 255){
+					A = A - 256;
+				}
+				PC++;
+			}
+			function SUB(Value){
+				A = A - Value;
+				UpdateFlags(A);
+				if(A < 0){
+					A = 256 - A;
+				}
+				PC++;
+			}
+			function SBB(Value){
+				A = A - Value - CF;
+				UpdateFlags(A);
+				if(A < 0){
+					A = 256 - A;
+				}
+				PC++;
+			}
+			function ADD(Value){
+				A = A + Value;
+				UpdateFlags(A);
+				if(A > 255){
+					A = A - 256;
+				}
+				PC++;
+			}
+			function ANA(Value){
+				A = A & Value;
+				UpdateFlags(A);
+				PC++;
+			}
+			function CMP(Value){
+				if(A < Value){
+					CF = 1;
+					ZF = 0;
+				}else if(A == Value){
+					CF = 0;
+					ZF = 1;
+				}else{
+					CF = 0;
+					ZF = 0;
+				}
+				PC++;
+			}
+			
+			function ORA(Value){
+				A = A | Value;
+				UpdateFlags(A);
+				PC++;
+			}
+			
+			function XRA(Value){
+				A = A ^ Value;
+				UpdateFlags(A);
+				PC++;
+			}
+			
+			function Fetch(){
+				let Temp;
+				PC = (PC & 65535) >>> 0;
+				Temp = MemoryRead(PC);
+				InstructionMatrix[Temp]();
+			}
+			
+			function MemoryRead(Address){
+				let BReg = (Address & 49152) >>> 14;
+				if(BAR[BReg].RAMRDIS() == 0){
+					Temp = FLASH[BAR[BReg].Page() * 16384 + (Address & 16383)];
+				}else{
+					Temp = RAM[BAR[BReg].Page() * 16384 + (Address & 16383)];
+				}
+				return Temp;
+			}
+			
+			function MemoryWrite(Address, Value){
+				let BReg = (Address & 49152) >>> 14;
+				if(BAR[BReg].ROMWDIS() == 0){
+					RAM[BAR[BReg].Page() * 16384 + (Address & 16383)] = Value & 255;
+				}else{
+					FLASH[BAR[BReg].Page() * 16384 + (Address & 16383)] = Value & 255;
+				}
+			}
+			
+			function Pop(){
+				Temp = MemoryRead(SP);
+				SP++;
+				if(SP > 65535){
+					SP = 0;
+				}
+				return Temp;
+			}
+			function Push(Value){
+				SP--;
+				if(SP < 0){
+					SP = 65535;
+				}
+				MemoryWrite(SP, Value);
+			}
+			
+			function Reset(){
+				PC = 0;
+			}
+			
+			function RST(Value){
+				PC++;
+				if(Value >= 0 && Value <= 7){
+					Value = Value * 8;
+					Push(PC / 256 >>> 0);
+					Push(PC % 256 >>> 0);
+					PC = Value;
+				}
+			}
+			function UpdateFlags(Value){
+				//Zero Flag
+				if(Value == 0){
+					ZF = 1;
+				}else{
+					ZF = 0;
+				}
+				//Sign Flag
+				if(Value && 128 == 1){
+					SF = 1;
+				}else{
+					SF = 0;
+				}
+				//Carry Flag
+				if(Value < 0 || Value > 255){
+					CF = 1;
+				}else{
+					CF = 0;
+				}
+				//Parity Flag
+				PF = (Value & 15) ^ (Value >>> 4);
+				PF = (PF & 3) ^ (PF >>> 2);
+				PF = (PF & 1) ^ (PF >>> 1);
+			}
+			
+			function UpdateFlagsID(Value){
+				//Zero Flag
+				if(Value == 0){
+					ZF = 1;
+				}else{
+					ZF = 0;
+				}
+				//Sign Flag
+				if(Value && 128 == 1){
+					SF = 1;
+				}else{
+					SF = 0;
+				}
+				//Parity Flag
+				PF = Value ^ Value >>> 4;
+				PF = PF ^ PF >>> 2;
+				PF = PF ^ PF >>> 1;
+			}
+			
+			function BreakpointToggle(){
+				let Temp = document.getElementById("Breakpoint").value;
+				if(Temp != ""){
+					Temp = parseInt(Temp, 16);
+					if(Breakpoint.includes(Temp)){
+						Breakpoint.splice(Breakpoint.indexOf(Temp), 1);
+					}else{
+						Breakpoint.push(Temp);
+					}
+				}else{
+					if(Breakpoint.includes(PC)){
+						Breakpoint.splice(Breakpoint.indexOf(PC), 1);
+					}else{
+						Breakpoint.push(PC);
+					}
+				}
+			}
+			
+			function InstructionString(){
+				var Temp = Mnemonic[MemoryRead(PC)];
+				switch(Temp.charAt(Temp.length - 1)){
+					case "b":
+						Temp = Temp.slice(0, -1);
+						Temp = Temp + " " + MemoryRead(PC + 1).toString(16).toUpperCase().padStart(2, "0");
+						break;
+					case "w":
+						Temp = Temp.slice(0, -1);
+						Temp = Temp + " " + (MemoryRead(PC + 2) * 256 + MemoryRead(PC + 1)).toString(16).toUpperCase().padStart(4, "0");
+						break
+					default:
+						break;
+				}
+				return Temp;
+			}
+			
+			function ClearMemoryA(){
+				if(RAMASpace == 0){
+					RAM.fill(0);
+				}else{
+					FLASH.fill(255);
+				}
+				DisplayMemory();
+			}
+			
+			function ClearMemoryB(){
+				if(RAMBSpace == 0){
+					RAM.fill(0);
+				}else{
+					FLASH.fill(255);
+				}
+				DisplayMemory();
+			}
+			
+			function DisplayBAR(){
+				let BARWindow = document.getElementById("DisplayBAR");
+				let Temp = "BAR   Page   RAM Reads   ROM Writes\n";
+				
+				for(let i = 0; i < BAR.length; i++){
+					Temp = Temp + " " + i + "     " + BAR[i].Page();
+					if(BAR[i].RAMRDIS() == 0){
+						Temp = Temp + "     Disabled";
+					}else{
+						Temp = Temp + "      Enabled";
+					}
+					if(BAR[i].ROMWDIS() == 0){
+						Temp = Temp + "     Disabled\n";
+					}else{
+						Temp = Temp + "      Enabled\n";
+					}
+				}
+				BARWindow.value = Temp;
+			}
+			
+			function DisplayMemory(){
+				let RAMWindow = document.getElementById("DisplayMemoryA");
+				let MemoryStart = (parseInt(document.getElementById("MemoryStartA").value, 16) & 16383) >>> 0;
+				let i = MemoryStart;
+				let Page = (parseInt(document.getElementById("MemoryPageA").value, 16) & 63) >>> 0;
+				let Temp = "";
+				if(RAMASpace == 0){
+					while(i <= MemoryStart + 240){
+						Temp = Temp + i.toString(16).toUpperCase().padStart(4, "0") + " ";
+						for(let j = 0; j < 7; j++){
+							Temp = Temp + RAM[Page * 16384 + i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + RAM[Page * 16384 + i + 7].toString(16).toUpperCase().padStart(2, "0") + " - ";
+						for(let j = 8; j < 15; j++){
+							Temp = Temp + RAM[Page * 16384 + i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + RAM[Page * 16384 + i + 15].toString(16).toUpperCase().padStart(2, "0") + "\n";
+						i = i + 16;
+					}
+				}else{
+					while(i <= MemoryStart + 240){
+						Temp = Temp + i.toString(16).toUpperCase().padStart(4, "0") + " ";
+						for(let j = 0; j < 7; j++){
+							Temp = Temp + FLASH[Page * 16384 + i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + FLASH[Page * 16384 + i + 7].toString(16).toUpperCase().padStart(2, "0") + " - ";
+						for(let j = 8; j < 15; j++){
+							Temp = Temp + FLASH[Page * 16384 + i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + FLASH[Page * 16384 + i + 15].toString(16).toUpperCase().padStart(2, "0") + "\n";
+						i = i + 16;
+					}
+				}
+				RAMWindow.value = Temp;
+				
+				MemoryStart = (parseInt(document.getElementById("MemoryStartB").value, 16) & 16383) >>> 0;
+				RAMWindow = document.getElementById("DisplayMemoryB");
+				i = MemoryStart;
+				Page = (parseInt(document.getElementById("MemoryPageB").value, 16) & 63) >>> 0;
+				Temp = "";
+				if(RAMBSpace == 0){
+					while(i <= MemoryStart + 240){
+						Temp = Temp + i.toString(16).toUpperCase().padStart(4, "0") + " ";
+						for(let j = 0; j < 7; j++){
+							Temp = Temp + RAM[Page * 16384 + i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + RAM[Page * 16384 + i + 7].toString(16).toUpperCase().padStart(2, "0") + " - ";
+						for(let j = 8; j < 15; j++){
+							Temp = Temp + RAM[Page * 16384 + i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + RAM[Page * 16384 + i + 15].toString(16).toUpperCase().padStart(2, "0") + "\n";
+						i = i + 16;
+					}
+				}else{
+					while(i <= MemoryStart + 240){
+						Temp = Temp + i.toString(16).toUpperCase().padStart(4, "0") + " ";
+						for(let j = 0; j < 7; j++){
+							Temp = Temp + FLASH[Page * 16384 + i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + FLASH[Page * 16384 + i + 7].toString(16).toUpperCase().padStart(2, "0") + " - ";
+						for(let j = 8; j < 15; j++){
+							Temp = Temp + FLASH[Page * 16384 + i + j].toString(16).toUpperCase().padStart(2, "0") + " ";
+						}
+						Temp = Temp + FLASH[Page * 16384 + i + 15].toString(16).toUpperCase().padStart(2, "0") + "\n";
+						i = i + 16;
+					}
+				}
+				RAMWindow.value = Temp;
+			}
+			
+			function DisplayPIC(){
+				let PICWindow = document.getElementById("DisplayPIC");
+			}
+			
+			function DisplayPIT(){
+				let PITWindow = document.getElementById("DisplayPIT");
+				let PITSel = parseInt(document.getElementById("PITSel").value);
+			}
+			
+			function DisplayRegisters(){
+				let RegisterWindow = document.getElementById("DisplayRegisters");
+				let FlagString = "";
+				let Temp = "";
+				if(SF == 0){
+					FlagString = FlagString + "\u00A0P\u00A0";
+				}else{
+					FlagString = FlagString + "\u00A0M\u00A0";
+				}
+				if(ZF == 0){
+					FlagString = FlagString + "NZ\u00A0";
+				}else{
+					FlagString = FlagString + "\u00A0Z\u00A0";
+				}
+				if(AF == 0){
+					FlagString = FlagString + "NA\u00A0";
+				}else{
+					FlagString = FlagString + "\u00A0A\u00A0";
+				}
+				if(PF == 0){
+					FlagString = FlagString + "PO\u00A0";
+				}else{
+					FlagString = FlagString + "PE\u00A0";
+				}
+				if(CF == 0){
+					FlagString = FlagString + "NC\u00A0";
+				}else{
+					FlagString = FlagString + "\u00A0C\u00A0";
+				}
+				Temp = Temp +	"AF = " + A.toString(16).toUpperCase().padStart(2, "0") + " " +
+								(SF * 128 + ZF * 64 + AF * 16 + PF * 4 + CF).toString(16).toUpperCase().padStart(2, "0") + " " +
+								FlagString + "\n";
+				Temp = Temp +	"BC = " + B.toString(16).toUpperCase().padStart(2, "0") + " " +
+								C.toString(16).toUpperCase().padStart(2, "0") + " [BC] = " +
+								MemoryRead(B * 256 + C).toString(16).toUpperCase().padStart(2, "0") + "\n";
+				Temp = Temp +	"DE = " + D.toString(16).toUpperCase().padStart(2, "0") + " " +
+								E.toString(16).toUpperCase().padStart(2, "0") + " [DE] = " +
+								MemoryRead(D * 256 + E).toString(16).toUpperCase().padStart(2, "0") + "\n";
+				Temp = Temp +	"HL = " + H.toString(16).toUpperCase().padStart(2, "0") + " " +
+								L.toString(16).toUpperCase().padStart(2, "0") + " [HL] = " +
+								MemoryRead(H * 256 + L).toString(16).toUpperCase().padStart(2, "0") + "\n";
+				Temp = Temp +	"SP = " + SP.toString(16).toUpperCase().padStart(4, "0") + " [SP] = " +
+								(MemoryRead(SP - 1) * 256 + MemoryRead(SP)).toString(16).toUpperCase().padStart(4, "0") + "\n";
+				Temp = Temp +	"PC = " + PC.toString(16).toUpperCase().padStart(4, "0") + " [PC] = " +
+								MemoryRead(PC).toString(16).toUpperCase().padStart(2, "0") + " " +
+								MemoryRead(PC + 1).toString(16).toUpperCase().padStart(2, "0") + " " +
+								MemoryRead(PC + 2).toString(16).toUpperCase().padStart(2, "0") + "\n\n";
+				Temp = Temp + InstructionString();
+				RegisterWindow.value = Temp;
+
+				DisplayMemory();
+			}
+			
+			function MainboardUpdate(){
+				//Port 00 - System Control Register (SCR)
+				//Port 04 - Block Address Register 0 (BAR0)
+				//Port 05 - Block Address Register 1 (BAR1)
+				//Port 06 - Block Address Register 2 (BAR2)
+				//Port 07 - Block Address Register 3 (BAR3)
+				//Port 08 - Block Address Register 4 (BAR4)
+				//Port 09 - Block Address Register 5 (BAR5)
+				//Port 0A - Block Address Register 6 (BAR6)
+				//Port 0B - Block Address Register 7 (BAR7)
+				//Port 20 - Programmable Interval Timer 0 (PIT0)
+				//Port 22 - Programmable Interval Timer 1 (PIT1)
+				//Port 30 - Parallel I/O 0 (PIO0)
+				//Port 32 - Parallel I/O 1 (PIO1)
+				//Port 38 - Serial I/O 0 (UART)
+				//Port 40 - Programmable Interrupt Controller 0 (PIC0)
+				//Port 44 - Programmable Interrupt Controller 1 (PIC1)
+				//Port 50 - DMA Controller 0 (DMAC0)
+				//Port 58 - DMA Controller 1 (DMAC1)
+				if(PORT[0] & 1 == 1){
+					Reset();
+				}
+				/*
+				for(let i = 0; i < BAR.length; i++){
+					BAR[i].Write(PORT[4 + i]);
+				}
+				*/
+				/*
+				PORT[38].Write(5);
+				*/
+			}
+			
+			function Pause(){
+				clearInterval(RefreshTask);
+			}
+			
+			function Reset(){
+				clearInterval(RefreshTask);
+				Steppoint = [];
+				PC = 0;
+				BAR[0].Write(0);
+				BAR[1].Write(0);
+				BAR[2].Write(0);
+				BAR[3].Write(0);
+				BAR[4].Write(0);
+				BAR[5].Write(0);
+				BAR[6].Write(0);
+				BAR[7].Write(0);
+				for(let i = 0; i < BAR.length; i++){
+					BAR[i].Reset();
+				}
+				MainboardUpdate();
+				DisplayRegisters();
+				DisplayBAR();
+			}
+			
+			function Run(){
+				RefreshTask = setInterval(function(){
+					ElapsedTime = 0;
+					Loops = 0;
+					while(ElapsedTime <= 1){
+						Fetch();
+						MainboardUpdate();
+						ElapsedTime += Delta;
+						Loops++;
+						if(Halted == true || Breakpoint.includes(PC) || Steppoint.includes(PC)){
+							if(Steppoint.includes(PC)){
+								Steppoint.splice(Steppoint.indexOf(PC), 1);
+							}
+							DisplayRegisters();
+							DisplayBAR();
+							LCDData.Draw();
+							clearInterval(RefreshTask);
+							break;
+						}
+					}
+				}, 1000);
+			}
+			
+			function SetBAR(){
+				let Temp = parseInt(document.getElementById("BARPage").value, 16);
+				let Reg = parseInt(document.getElementById("BARReg").value);
+				if(document.getElementById("BARRAMR").checked == true){
+					Temp = Temp + 64;
+				}
+				if(document.getElementById("BARROMW").checked == true){
+					Temp = Temp + 128;
+				}
+				PORT[4 + Reg].Write(Temp);
+				DisplayRegisters();
+				DisplayBAR();
+			}
+			
+			function SetReg(){
+				let Temp = parseInt(document.getElementById("RegValue").value, 16) & 65535 >>> 0;
+				let Reg = parseInt(document.getElementById("RegSel").value);
+				switch(Reg){
+					case 0:
+						A = Temp & 255 >>> 0;
+						break;
+					case 1:
+						B = Temp & 255 >>> 0;
+						break;
+					case 2:
+						C = Temp & 255 >>> 0;
+						break;
+					case 3:
+						D = Temp & 255 >>> 0;
+						break;
+					case 4:
+						E = Temp & 255 >>> 0;
+						break;
+					case 5:
+						H = Temp & 255 >>> 0;
+						break;
+					case 6:
+						L = Temp & 255 >>> 0;
+						break;
+					case 7:
+						B = Temp / 256 >>> 0;
+						C = Temp % 256 >>> 0;
+						break;
+					case 8:
+						D = Temp / 256 >>> 0;
+						E = Temp % 256 >>> 0;
+						break;
+					case 9:
+						H = Temp / 256 >>> 0;
+						L = Temp % 256 >>> 0;
+						break;
+					case 10:
+						SP = Temp;
+						break;
+					case 11:
+						PC = Temp;
+						break;
+					default:
+						break;
+				}
+				DisplayRegisters();
+			}
+			
+			function Step(){
+				var StepCount = parseInt(document.getElementById("StepCount").value);
+				for(let i = 0; i < StepCount; i++){
+					Fetch();
+					MainboardUpdate();
+					DisplayRegisters();
+					DisplayBAR();
+					LCDData.Draw();
+				}
+			}
+			
+			function StepOver(){
+				var Address = PC + InstructionLength[MemoryRead(PC)];
+				if(!Steppoint.includes(Address)){
+					Steppoint.push(Address);
+				}
+				Run();
+			}
+			
+			function ToggleMemoryA(){
+				if(document.getElementById("MemoryToggleA").checked == true){
+					RAMASpace = 1;
+				}else{
+					RAMASpace = 0;
+				}
+				DisplayMemory();
+			}
+			
+			function ToggleMemoryB(){
+				if(document.getElementById("MemoryToggleB").checked == true){
+					RAMBSpace = 1;
+				}else{
+					RAMBSpace = 0;
+				}
+				DisplayMemory();
+			}
+		</script>
+		
+		<div style="float:right">
+			<div style="display:block">
+				<textarea id="DisplayRegisters" rows="9" cols="25" disabled="true"></textarea>
+				<div>
+					<select id="RegSel">
+						<option value="0">A</option>
+						<option value="1">B</option>
+						<option value="2">C</option>
+						<option value="3">D</option>
+						<option value="4">E</option>
+						<option value="5">H</option>
+						<option value="6">L</option>
+						<option value="7">BC</option>
+						<option value="8">DE</option>
+						<option value="9">HL</option>
+						<option value="10">SP</option>
+						<option value="11">PC</option>
+					</select>
+					<input type="text" id="RegValue" maxlength="4" size="4" value="00"></input>
+					<button onclick="SetReg()">Set</button>
+				</div>
+			</div>
+			
+			<div>
+				<div>
+					<button onclick="Reset()">Reset</button>
+					<button onclick="Pause()">Pause</button>
+					<button onclick="Step()">Single Step</button>
+					<button onclick="StepOver()">Step Over</button>
+					<button onclick="Run()">Run</button>
+				</div>
+				<div>
+					<input type="text" id="Breakpoint" maxlength="4" size="4"></input>
+					<button onclick="BreakpointToggle()">Toggle Breakpoint</button>
+				</div>
+				<input type="text" id="StepCount" maxlength="4" size="4" value="1" style="display:inline"></input>
+			</div>
+		
+			<div style="display:block">
+				<div>
+					<textarea id="DisplayPIC" rows="10" cols="30" disabled="true"></textarea>
+				</div>
+				<div>
+					<select id="PICSel">
+						<option value="0">0</option>
+						<option value="1">1</option>
+					</select>
+				</div>
+			</div>
+			
+			<div style="display:block">
+				<div>
+					<textarea id="DisplayPIT" rows="10" cols="30" disabled="true"></textarea>
+				</div>
+				<div>
+					<select id="PITSel">
+						<option value="0">0</option>
+						<option value="1">1</option>
+					</select>
+				</div>
+			</div>
+		</div>
+		
+		<div style="float:right">
+			<div style="display:block">
+				<div>
+					<textarea id="DisplayUART" rows="24" cols="80" disabled="true"></textarea>
+				</div>
+				<div>
+					<input type="text" id="UARTInput" size="75"></input>
+					<button onclick="UARTSend()">Send</button>					
+				</div>
+				<div>
+					Baud
+					<select id="UARTBaud">
+						<option value="0">1200</option>
+						<option value="1">2400</option>
+						<option value="2">4800</option>
+						<option value="3">9600</option>
+						<option value="4">19200</option>
+						<option value="5">38400</option>
+						<option value="6">57600</option>
+						<option value="7">115200</option>
+						<option value="8">230400</option>
+						<option value="9">460800</option>
+						<option value="10">921600</option>
+					</select>
+					Port<input type="text" id="UARTPort" size="2"></input>
+					IRQ
+					<select id="UARTIRQNumber">
+						<option value="0">0</option>
+						<option value="1">1</option>
+						<option value="2">2</option>
+						<option value="3">3</option>
+						<option value="4">4</option>
+						<option value="5">5</option>
+						<option value="6">6</option>
+						<option value="7">7</option>
+						<option value="8">8</option>
+						<option value="9">9</option>
+						<option value="10">10</option>
+						<option value="11">11</option>
+						<option value="12">12</option>
+						<option value="13">13</option>
+						<option value="14">14</option>
+						<option value="15">15</option>
+					</select>
+					<input type="checkbox" id="UARTLineMode">Line Mode</input>
+					<input type="checkbox" id="UARTSendCR" checked="true">Send CR</input>
+					<input type="checkbox" id="UARTSendLF" checked="true">Send LF</input>
+					<select id="UARTConnection">
+						<option value="0">Terminal</option>
+						<option value="1">Serial</option>
+						<option value="2">Bluetooth</option>
+						<option value="3">Net</option>
+					</select>
+				</div>
+			</div>
+			
+			<div style="display:block">
+				<canvas id="DisplayCanvas" width="480" height="320" style="border:1px solid #c3c3c3;">
+					Your browser does not support the canvas element.
+				</canvas>
+				<div>
+					Port<input type="text" id="DisplayPort" size="2"></input>
+				</div>
+			</div>
+			
+			<div style="display:block">
+				<canvas id="LCDCanvas" width="256" height="128" style="border:1px solid #c3c3c3;">
+					Your browser does not support the canvas element.
+				</canvas>
+				<div>
+					Port<input type="text" id="LCDPort" size="2"></input>
+				</div>
+			</div>
+		</div>
+		
+		<div>
+			<div>
+				<div>
+					<input id="inp" type="file" onchange="readFile(event)" accept=".hex"></input>
+				</div>
+				<div>
+					Page<input type="text" id="LoadPage" maxlength="2" size="2" value="00"></input>
+					Offset<input type="text" id="LoadOffset" maxlength="4" size="4" value="0000"></input>
+					<input type="checkbox" id="LoadToggle">Load to RAM
+				</div>
+			</div>
+			<div>
+				<div style="display:block">
+					<textarea id="DisplayMemoryA" rows="17" cols="55" disabled="true"></textarea>
+					<div style="display:block">
+						Page<input type="text" id="MemoryPageA" maxlength="2" size="2" value="00"></input>
+						Address<input type="text" id="MemoryStartA" maxlength="4" size="4" value="0000"></input>
+						<input type="checkbox" id="MemoryToggleA" checked="true" onclick="ToggleMemoryA()">Show Flash
+						<button onclick="ToggleMemoryA()">Set</button>
+						<button onclick="ClearMemoryA()">Clear</button>
+					</div>
+				</div>
+				<div style="display:block">
+					<textarea id="DisplayMemoryB" rows="17" cols="55" disabled="true"></textarea>
+					<div style="display:block">
+						Page<input type="text" id="MemoryPageB" maxlength="2" size="2" value="00"></input>
+						Address<input type="text" id="MemoryStartB" maxlength="4" size="4" value="0000"></input>
+						<input type="checkbox" id="MemoryToggleB" onclick="ToggleMemoryB()">Show Flash
+						<button onclick="ToggleMemoryB()">Set</button>
+						<button onclick="ClearMemoryB()">Clear</button>
+					</div>
+				</div>
+			</div>
+			
+			<div>
+				<textarea id="DisplayBAR" rows="10" cols="35" disabled="true"></textarea>
+				<div>
+					<select id="BARReg">
+						<option value="0">0</option>
+						<option value="1">1</option>
+						<option value="2">2</option>
+						<option value="3">3</option>
+						<option value="4">4</option>
+						<option value="5">5</option>
+						<option value="6">6</option>
+						<option value="7">7</option>
+					</select>
+					<input type="text" id="BARPage" maxlength="2" size="2" value="00"></input>
+					<input type="checkbox" id="BARRAMR">RAMRDIS</input>
+					<input type="checkbox" id="BARROMW">ROMWDIS</input>
+					<button onclick="SetBAR()">Set</button>
+				</div>
+			</div>
+		</div>
+		
+		<div id="hexfile"></div>
+	</body>
+</html>
