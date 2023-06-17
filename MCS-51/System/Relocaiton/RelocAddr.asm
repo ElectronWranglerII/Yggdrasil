@@ -1,0 +1,60 @@
+;* Yggdrasil (TM) Core Operating System (MCS-51): Relocatable Code Library
+;* Copyright (C) DeRemee Systems, IXE Electronics LLC
+;* Portions copyright IXE Electronics LLC, Republic Robotics,
+;* FemtoLaunch, FemtoSat, FemtoTrack, Weland
+;* This work is made available under the Creative Commons
+;* Attribution-NonCommercial-ShareAlike 4.0 International License.
+;* To view a copy of this license, visit
+;* http://creativecommons.org/licenses/by-nc-sa/4.0/.
+
+;RETURNS THE ABSOLUTE ADDRESS OF CODE OR FLASH CONSTANT
+;ON ENTRY:
+;	DPTR	= OFFSET
+;ON RETURN:
+;	DPTR	= ABSOLUTE ADDRESS
+;	R0		= PAGE
+LRELOCADDR:
+  PUSH	ACC
+  PUSH	B
+  PUSH	DPL
+  PUSH	DPH
+  ;LOAD RELOCATION TABLE CONTROL BLOCK ADDRESS
+  MOV		DPTR, #RELOC_ADR
+  CALL	DPTRWLDXDNN
+  ;LOAD CURRENT ENTRY ID
+  MOV		B, #RELOC_OFFS_CUR_ENTRY
+  CALL	LDPTRBMRMDON
+  ;ENSURE CURRENT ENTRY ID <= MAXIMUM ENTRY COUNT
+  PUSH	ACC
+  MOV		B, #RELOC_OFFS_MAX_ENTRIES
+  CALL	LDPTRBMRMDON
+  POP		B
+  CLR		C
+  SUBB	A, B
+  JNC		LRELOCADDRA
+  ;CURRENT ENTRY ID > MAXIMUM ENTRY COUNT
+  SJMP	$
+LRELOCADDRA:
+  ;POINT TO START OF RELOCATION TABLE
+  MOV		A, #RELOC_OFFS_TABLE
+  CALL	LDPTRBADD
+  ;CALCULATE CURRENT RELOCATION ENTRY'S TABLE ADDRESS
+  MOV		A, #RELOC_ENTRY_SIZE
+  MUL		AB
+  CALL	DPTRWADDAB
+  ;LOAD BASE ADDRESS
+  INC		DPTR
+  MOV		A, #RELOC_TBL_OFFS_ADR
+  CALL	LDPTRBADD
+  MOVX	A, @DPTR
+  MOV		B, A
+  INC		DPTR
+  MOVX	A, @DPTR
+  POP		DPH
+  POP		DPL
+  XCH		A, B
+  CALL	DPTRWADDAB
+  ;RESTORE REGISTERS & RETURN
+  POP		B
+  POP		ACC
+  RET
